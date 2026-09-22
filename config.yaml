@@ -1,0 +1,14 @@
+# These are configurable prototype decision thresholds, not agronomically
+# validated irrigation thresholds. Soil moisture is stored as a fraction.
+irrigation:
+  high_risk_below: 0.220
+  moderate_risk_below: 0.230
+
+confidence:
+  minimum: 0.50
+
+model:
+  random_state: 42
+  test_size: 0.15
+  validation_size: 0.15
+

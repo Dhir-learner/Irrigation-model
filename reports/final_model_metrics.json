@@ -1,0 +1,16 @@
+{
+  "selected_model": "Gradient Boosting",
+  "validation_metrics": {
+    "mae": 1.04777517314301e-05,
+    "rmse": 5.413447316512774e-05,
+    "r2": 0.9999730280339773
+  },
+  "test_metrics": {
+    "mae": 1.5346897590758544e-05,
+    "rmse": 0.00015652575510350736,
+    "r2": 0.9997592759679091
+  },
+  "split_strategy": "Random 70/15/15 split (random_state=42). The dataset has no timestamp and each Farm_ID is unique. Spatially adjacent farms and shared village conditions may make this random hold-out optimistic; use spatial/temporal hold-outs when additional data is available.",
+  "training_date": "2026-09-22T15:19:32.706666+00:00",
+  "source_rows_after_cleaning": 1000
+}
