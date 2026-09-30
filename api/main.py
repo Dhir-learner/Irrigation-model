@@ -36,7 +36,8 @@ from src.train import DEFAULT_MODEL_PATH
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
+_frontend_root = PROJECT_ROOT / "frontend"
+FRONTEND_DIR = _frontend_root / "dist" if (_frontend_root / "dist").exists() else _frontend_root
 REPORTS_DIR = PROJECT_ROOT / "reports"
 MODEL_PATH = DEFAULT_MODEL_PATH
 DB_PATH = DEFAULT_DB_PATH

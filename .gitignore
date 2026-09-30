@@ -4,4 +4,5 @@ __pycache__/
 .venv/
 database/*.db
 *.log
-
+frontend/node_modules/
+# frontend/dist is NOT ignored — Docker builds it from source

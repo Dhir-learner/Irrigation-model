@@ -8,10 +8,10 @@
   "best_unseen_village_model": {
     "scheme": "Leave-one-village-out",
     "feature_set": "all features",
-    "model": "Random Forest",
-    "mae": 0.007126250614580291,
-    "rmse": 0.012469284336267605,
-    "r2": -0.5037436672706626
+    "model": "Mean baseline",
+    "mae": 0.00713511485846687,
+    "rmse": 0.01128184176436371,
+    "r2": -0.23097933763644263
   },
   "unseen_village_mean_baseline_mae": 0.00713511485846687,
   "finding": "Random-split scores are near perfect, but on unseen villages no model beats the mean baseline by a useful margin. Soil moisture in this dataset behaves like a coarse satellite grid value shared by whole villages. The model therefore cannot replace in-field soil moisture sensing; the irrigation engine accepts sensor readings and uses the model only as a fallback."

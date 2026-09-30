@@ -22,22 +22,22 @@
     ".geo"
   ],
   "dtypes": {
-    "system:index": "object",
-    "District": "object",
+    "system:index": "str",
+    "District": "str",
     "Farm_Area_ha": "float64",
-    "Farm_ID": "object",
+    "Farm_ID": "str",
     "LAI": "float64",
     "NDVI": "float64",
     "Organic_Carbon": "float64",
     "Rainfall_mm": "float64",
     "Relative_Humidity": "float64",
-    "Sampling_Method": "object",
+    "Sampling_Method": "str",
     "Soil_Moisture": "float64",
     "Soil_pH": "float64",
-    "Taluk": "object",
+    "Taluk": "str",
     "Temperature_C": "float64",
-    "Village": "object",
-    ".geo": "object"
+    "Village": "str",
+    ".geo": "str"
   },
   "missing_values": {
     "system:index": 0,

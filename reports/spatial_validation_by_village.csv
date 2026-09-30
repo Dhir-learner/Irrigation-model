@@ -19,23 +19,23 @@ Linear Regression,Kachenahalli,0.015945364939732008
 Linear Regression,Laxmipura,0.030645117895082875
 Linear Regression,Malagalali,0.024266572062931507
 Linear Regression,Talasasana,0.08113720698900863
-Random Forest,Ankegowdanadoddi,0.0024908737503089883
-Random Forest,Bheemanahalli,0.002964021926315266
-Random Forest,Chikkathammanahalli,0.0002370592307404346
-Random Forest,Chowda Ghatta,0.016770184616559075
-Random Forest,Hadya,1.4684965555994119e-05
-Random Forest,Hosur,0.0027416978031396533
-Random Forest,Kachenahalli,0.004354855648943682
+Random Forest,Ankegowdanadoddi,0.002520289387563704
+Random Forest,Bheemanahalli,0.0029640219263152583
+Random Forest,Chikkathammanahalli,0.0002363248238405374
+Random Forest,Chowda Ghatta,0.017094659115188655
+Random Forest,Hadya,1.751685673507691e-05
+Random Forest,Hosur,0.002739063501358024
+Random Forest,Kachenahalli,0.004349587045380376
 Random Forest,Laxmipura,0.03446816156614134
-Random Forest,Malagalali,0.004857866758734651
-Random Forest,Talasasana,0.0012233075395090619
-Gradient Boosting,Ankegowdanadoddi,0.0014411994573852332
-Gradient Boosting,Bheemanahalli,0.005178684567738261
-Gradient Boosting,Chikkathammanahalli,8.975540293311642e-05
-Gradient Boosting,Chowda Ghatta,0.02126614378594831
+Random Forest,Malagalali,0.004857866758734652
+Random Forest,Talasasana,0.0012243298622985812
+Gradient Boosting,Ankegowdanadoddi,0.0014421185003314926
+Gradient Boosting,Bheemanahalli,0.0051857889520278274
+Gradient Boosting,Chikkathammanahalli,8.985620884243877e-05
+Gradient Boosting,Chowda Ghatta,0.022107409168927932
 Gradient Boosting,Hadya,9.187236908216411e-06
-Gradient Boosting,Hosur,0.0005835253934691237
-Gradient Boosting,Kachenahalli,0.0032211873480714236
-Gradient Boosting,Laxmipura,0.033149061373704505
-Gradient Boosting,Malagalali,0.004997686337977127
-Gradient Boosting,Talasasana,0.0009730256845254405
+Gradient Boosting,Hosur,0.0005835254143132387
+Gradient Boosting,Kachenahalli,0.005107814229794787
+Gradient Boosting,Laxmipura,0.03314963983652939
+Gradient Boosting,Malagalali,0.004997424974819352
+Gradient Boosting,Talasasana,0.0009730832686993668

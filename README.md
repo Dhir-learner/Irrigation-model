@@ -1,226 +1,30 @@
-# AI irrigation advisory system for sugarcane
+﻿---
+title: AquaAdvisory — Sugarcane Irrigation Intelligence
+emoji: 💧
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+app_port: 7860
+---
 
-An end-to-end KJS-AGR-01 prototype. It trains a soil-moisture model from the supplied farm data and audits how well that model generalises to unseen villages. It then turns soil moisture into plot-level irrigation decisions with an FAO-56 water-balance engine: next irrigation date, pump duration, water stress, rainfall adjustment, yield loss from delay, fertigation, pump scheduling and multilingual advisories. Everything is served through FastAPI, a web frontend and a Streamlit dashboard.
+# AquaAdvisory — KJS-AGR-01
 
-This is not a production irrigation controller or an agronomically validated prescription. No sensor hardware is connected. The engine accepts sensor readings, and a live weather forecast is optional.
+**Sugarcane precision irrigation advisory system** for the KIAAR Sameerwadi region, Karnataka.
 
-See [CONTRIBUTION.md](CONTRIBUTION.md) for how each part maps to the use-case document.
+Built with FAO-56 crop water balance, ML soil moisture prediction, and a real-time React dashboard.
 
-## Implemented features
+## Features
+- Farm-level irrigation advisory (FAO-56 engine)
+- Fleet map — 1,000 plots coloured by irrigation status
+- Pump scheduling (feeder-level slot allocation)
+- ML soil moisture model with spatial validation
+- Human review / HITL feedback loop
+- Multilingual advisory (English, Kannada, Hindi, Marathi)
 
-- CSV validation, profiling, EDA figures, and reproducible notebooks.
-- Pipeline-contained feature engineering, imputation, scaling, encoding, training, model selection, and saved artifact.
-- Linear Regression, Random Forest, Extra Trees, and Gradient Boosting comparisons; XGBoost is included automatically if separately installed.
-- Global and local explainability, configurable prototype risk rules, SQLite logs, FastAPI, Streamlit, valid GeoJSON farm polygons, and what-if simulation.
-- Spatial validation audit with leave-one-village-out and leave-one-taluk-out cross-validation (`src/validation.py`).
-- FAO-56 irrigation engine covering crop water requirement, next irrigation date, depth, volume, pump duration, water stress index, rainfall adjustment, FAO-33 yield loss from delay, and fertigation (`src/agronomy.py`).
-- Pump scheduling in electricity supply windows, per farm and per feeder with a concurrent-pump cap (`src/scheduling.py`).
-- Advisories in English, Kannada, Hindi and Marathi, with an optional Claude rewrite that is rejected if any number changes (`src/multilingual.py`).
-- Optional live 14-day forecast from Open-Meteo, including Penman-Monteith ETo (`src/weather.py`).
-- Human-in-the-loop feedback: reviewers accept, modify or reject each advisory, and the decision is logged as a future training label.
+## Access
+- Dashboard: /app/
+- API docs: /docs
 
-## Dataset and target
-
-The supplied CSV is copied to `data/IrrigationAdvisoryDataset.csv`. It has 1,000 records and 16 fields. `Soil_Moisture` is the only usable labelled target, so the system predicts a **soil-moisture fraction** (rendered as a percentage in the dashboard).
-
-- There are no exact duplicates and six missing `NDVI` values.
-- `District` and `Sampling_Method` are constant; `Farm_Area_ha` is constant apart from floating-point noise. All three are excluded, as are the `Farm_ID` and `system:index` identifiers.
-- Valid GeoJSON polygons are present; bounding-box longitude/latitude centers are derived for the model while original polygons are retained for the map.
-- There is no observation date and no labels for irrigation date, volume, duration, yield, or water-stress. These outcomes are therefore not ML predictions. The FAO-56 engine estimates them from physical equations, and each output is labelled as rule-based.
-
-The complete source-of-truth profile—shape, columns, dtypes, missing values, unique counts, numeric summary, and categorical values—is in [dataset_profile.json](reports/dataset_profile.json).
-
-## ML methodology
-
-Raw model inputs are LAI, NDVI, organic carbon, rainfall, relative humidity, soil pH, temperature, Taluk, Village, and GeoJSON geometry. The pipeline adds centroid coordinates plus rainfall × temperature and humidity × temperature interactions. Farm area remains visible in farm details but is excluded because its apparent variation is floating-point noise. Numeric values are median-imputed and standardized; categories are most-frequent-imputed and one-hot encoded.
-
-No target, identifier, duplicate, or constant field is an estimator input. The source contains neither a temporal order nor repeat Farm IDs, so the implementation uses a deterministic random 70/15/15 train/validation/test split (`random_state=42`). Candidates are selected on validation RMSE, refit on train plus validation data, then evaluated once on the held-out test set.
-
-## Current run results
-
-These values were generated by `python -m src.train` against the supplied CSV. If the data or configuration changes, the generated reports are authoritative.
-
-| Model | Validation MAE | Validation RMSE | Validation R² |
-| --- | ---: | ---: | ---: |
-| Gradient Boosting | 0.00001048 | 0.00005413 | 0.999973 |
-| Random Forest | 0.00002151 | 0.00007663 | 0.999946 |
-| Extra Trees | 0.00005618 | 0.00018314 | 0.999691 |
-| Linear Regression | 0.00049204 | 0.00090514 | 0.992460 |
-
-**Gradient Boosting** was selected. Its held-out test MAE is **0.00001535**, RMSE **0.00015653**, and R² **0.999759**. See [model_comparison.csv](reports/model_comparison.csv) and [final_model_metrics.json](reports/final_model_metrics.json).
-
-Important caveat: geographically adjacent farms share source values and the target has few distinct levels. The random hold-out can therefore measure interpolation among nearby records and may overstate performance on a new village, season, soil type, or sensor source. Future work must add longitudinal data and spatial/temporal hold-outs before claiming generalization.
-
-## Spatial validation: does the model work on a new village?
-
-`python -m src.validation` repeats the comparison with group-aware cross-validation. The table shows mean absolute error in soil-moisture fraction for the all-features pipeline.
-
-| Model | Random 5-fold | Leave-one-village-out | Leave-one-taluk-out |
-| --- | ---: | ---: | ---: |
-| Mean baseline | 0.00644 | 0.00714 | 0.00691 |
-| Linear Regression | 0.00048 | 0.02928 | 0.06771 |
-| Random Forest | 0.00001 | 0.00713 | 0.00543 |
-| Gradient Boosting | 0.00001 | 0.00725 | 0.00512 |
-
-On unseen villages every model has negative R², so none beats predicting the average. The target has only 33 distinct values, and 6 of 10 villages have a single value, so soil moisture behaves like a coarse satellite grid cell. The random-split score measures memorisation of village values.
-
-The design consequence is that the model cannot replace field sensing. The irrigation engine therefore takes a probe reading when one exists and falls back to the model estimate, and every result records which source it used. Full results are in `reports/spatial_validation.csv`, `reports/spatial_validation_summary.json` and `reports/figures/spatial_validation.png`.
-
-## Irrigation decision engine (FAO-56)
-
-`src/agronomy.py` is rule-based and transparent. Parameters live in the `agronomy` section of [config.yaml](config.yaml).
-
-1. The crop stage and crop coefficient Kc come from crop age, using FAO-56 sugarcane values of 0.40, 1.25 and 0.75.
-2. Reference evapotranspiration ETo uses FAO Blaney-Criddle from mean temperature and latitude, or Penman-Monteith ETo from the forecast when it is fetched.
-3. Root-zone depletion is computed from soil moisture against field capacity. Root depth grows from 0.3 m to 1.2 m.
-4. A 14-day daily water balance finds the day depletion reaches the readily available water (RAW), which is the next irrigation date.
-5. Net depth refills the root zone. Gross depth divides by the method's efficiency, and duration divides volume by pump discharge.
-6. Forecast rain is converted to effective rain, and the plan reports how many days it postpones irrigation.
-7. The water stress coefficient Ks (FAO-56 equation 84) gives a 0 to 1 stress index.
-8. Yield loss from delay uses FAO-33: loss = Ky × (1 − ETa/ETm) over the stage.
-9. Fertigation splits a seasonal NPK dose by stage, adjusts nitrogen by organic-carbon rating, and converts it to urea, MAP and MOP per acre.
-
-Soil texture, planting date, irrigation method and pump discharge are inputs, because the dataset does not contain them. Seasonal NPK doses and the electricity timetable are placeholders to replace with KIAAR and ESCOM values.
-
-## Explainability and advisory decision
-
-`reports/global_feature_importance.csv` uses SHAP if available; otherwise it explicitly falls back to native tree/linear feature importance. Individual explanations use transparent one-at-a-time baseline perturbations and are not causal claims.
-
-The model predicts soil moisture; `src/advisory.py` then applies [config.yaml](config.yaml):
-
-- below `high_risk_below` (0.220): `HIGH`
-- from 0.220 to below `moderate_risk_below` (0.230): `MODERATE`
-- 0.230 or greater: `LOW`
-
-These are **configurable prototype decision thresholds**, not agronomically validated thresholds. The advisory requests field inspection and local agricultural guidance; it never claims an exact irrigation volume, duration, or date. Its confidence is a relative validation-fit score, not a calibrated probability.
-
-## Project structure
-
-```text
-data/                         supplied CSV
-notebooks/                    EDA, feature-engineering, training notebooks
-src/                          ingestion, features, training, prediction, advisory, SQLite
-src/validation.py             spatial generalisation audit
-src/agronomy.py               FAO-56 water balance, stress, yield loss, fertigation
-src/scheduling.py             pump sessions and feeder allocation
-src/multilingual.py           four-language advisories and optional Claude rewrite
-src/weather.py                optional Open-Meteo forecast connector
-src/decision.py               per-farm orchestration (sensor or model, engine, advisory)
-src/coverage.py               use-case traceability matrix
-api/main.py                   FastAPI service
-dashboard/app.py              Streamlit dashboard
-frontend/                     web frontend (HTML, CSS, JavaScript) served by FastAPI at /app
-models/                       saved complete model pipeline
-reports/                      profile, figures, metrics, importance
-tests/                        ingestion, preprocessing, model, advisory, API tests
-```
-
-## Install, train, and run
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m src.eda
-python -m src.train
-python -m src.validation
-```
-
-EDA writes distributions, target relationships, a correlation heatmap, and district comparison into `reports/figures/`. Training saves the full pipeline to `models/soil_moisture_pipeline.joblib`.
-
-Run the dashboard:
-
-```powershell
-streamlit run dashboard/app.py
-```
-
-Open Streamlit's printed localhost address (normally `http://localhost:8501`). The sidebar picks the farm, planting date, soil, irrigation method, pump, an optional probe reading and the advisory language. The tabs are:
-
-- **Farm advisory:** irrigation status, next date, pump hours, water balance chart, advisory text, yield loss table, fertigation, pump sessions and the review form.
-- **Fleet map:** every plot coloured by irrigation status, plus farms by days until irrigation.
-- **Pump scheduling:** feeder-level allocation for one village with a Gantt chart and unmet pump-hours.
-- **Soil-moisture model:** model metrics, local explanation and the what-if simulator.
-- **Model validation:** the spatial validation finding.
-- **Use-case coverage:** each AI model from the use-case document with its status and evidence.
-
-Run the API:
-
-```powershell
-uvicorn api.main:app --reload
-```
-
-Interactive documentation is at `http://127.0.0.1:8000/docs`. Endpoints:
-
-- `GET /health`
-- `POST /predict`
-- `POST /what-if`
-- `GET /model-info`
-- `POST /irrigation-plan` returns the full plan, fertigation, yield-loss table, pump sessions and advisory text. It takes the prediction fields plus `crop_age_days`, and optionally `sensor_soil_moisture`, `Farm_Area_ha`, `soil_type`, `irrigation_method`, `pump_flow_m3h`, `forecast_rain_mm`, `start_date` and `language` (`en`, `kn`, `hi`, `mr`).
-- `POST /feeder-schedule` allocates pump slots for farms sharing a feeder.
-- `POST /advisory` renders advisory facts in a chosen language, with `use_llm` for the optional Claude rewrite.
-- `POST /feedback` and `GET /feedback` record and list human accept, modify or reject decisions.
-
-Example prediction body:
-
-```json
-{
-  "farm_id": "MM-MD-0110",
-  "NDVI": 0.58,
-  "LAI": 0.55,
-  "Rainfall_mm": 511.2,
-  "Relative_Humidity": 77.1,
-  "Temperature_C": 23.7,
-  "Soil_pH": 6.3,
-  "Organic_Carbon": 15.0,
-  "Taluk": "Malavalli",
-  "Village": "Bheemanahalli"
-}
-```
-
-`POST /what-if` accepts `farm_id`, a `features` object, and a `changes` object such as `{"Rainfall_mm": 600, "Temperature_C": 22}`. Both endpoints load the saved artifact and record structured results in `database/app.db`.
-
-## Web frontend
-
-The web frontend is a single-page app in `frontend/` with no build step. FastAPI serves it, so one command runs both:
-
-```powershell
-uvicorn api.main:app --reload
-```
-
-Open `http://127.0.0.1:8000/`, which redirects to `/app/`. Its views are:
-
-- **Farm dashboard:** plot map, irrigation advisory, weather outlook, alerts, soil and crop status, a 14-day water balance chart, fertigation, yield risk from delay, pump sessions, the farmer message in four languages, the review form and the model's local explanation.
-- **Fleet map:** all 1,000 plots coloured by irrigation status, with the farms due soonest. Selecting a plot opens it on the dashboard.
-- **Pump scheduling:** feeder allocation for a village with a Gantt chart and unmet pump-hours.
-- **Model validation, use-case coverage and review log.**
-
-It works at phone width and in light or dark mode. Leaflet and the map tiles load from the internet; without a connection the maps show a message and every other card still works. The live forecast is opt-in with the Live forecast checkbox.
-
-Endpoints added for it: `GET /options`, `GET /farms`, `GET /farms/geojson`, `GET /farms/{farm_id}`, `POST /farms/{farm_id}/plan`, `GET /fleet`, `GET /validation` and `GET /coverage`.
-
-## Optional LLM advisories
-
-The Claude rewrite needs `pip install anthropic` and an `ANTHROPIC_API_KEY`. It uses the model set in `config.yaml` (`claude-opus-5-5`) at low effort. Its output is discarded in favour of the template if any irrigation or fertilizer number is missing from it. Without the package or a key, the template text is used and the dashboard says so.
-
-## Test and containerize
-
-```powershell
-pytest
-docker build -t ai-irrigation-advisory .
-docker run --rm -p 8000:8000 ai-irrigation-advisory
-```
-
-The Docker image serves the API by default. Train the artifact before building it, or mount/provide a trained model artifact.
-
-## Limitations and future improvements
-
-- The source is static, narrow geographically, and lacks independent time-series observations.
-- No IoT hardware, weather provider, live sensor feed, or real-time data is connected.
-- Prototype risk thresholds require agricultural-expert validation and field trials.
-- The soil-moisture model does not generalise to unseen villages (see spatial validation). Field probes are needed for real decisions.
-- The satellite soil-moisture value is treated as the root-zone average. Probes at 30 cm and 60 cm would replace this assumption.
-- FAO-56 parameters, the effective-rain rule, fertigation doses and supply windows are prototype values that KIAAR agronomists must calibrate.
-- Yield prediction and disease forecasting are not implemented because the dataset has no yield or disease records.
-- Kannada, Hindi and Marathi wording needs native-speaker review before farmers see it.
-- Timestamped sensor readings, logged irrigation events and harvested yields would let trained models replace or correct the rule-based outputs. The feedback table is the first step toward those labels.
-- Future releases should use spatial and temporal hold-outs, calibration, uncertainty intervals, and agronomic validation before deployment.
+## Stack
+React + Vite · FastAPI · scikit-learn · Leaflet · Recharts · Docker
