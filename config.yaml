@@ -12,3 +12,63 @@ model:
   test_size: 0.15
   validation_size: 0.15
 
+
+# ---------------------------------------------------------------------------
+# Agronomic decision-support engine (src/agronomy.py).
+# Every value below is a published reference default (FAO-56 / FAO-33) or a
+# stated prototype assumption. Replace with KIAAR field-calibrated values
+# before any operational use.
+# ---------------------------------------------------------------------------
+agronomy:
+  # FAO-56 Table 12 (sugarcane): single crop coefficients.
+  kc: {initial: 0.40, mid: 1.25, end: 0.75}
+  # FAO-56 Table 11 (sugarcane, tropics, plant crop) stage lengths in days.
+  stage_days: {initial: 35, development: 60, mid: 190, late: 120}
+  # FAO-56 Table 22: sugarcane depletion fraction p and max rooting depth.
+  depletion_fraction_p: 0.65
+  root_depth_m: {min: 0.30, max: 1.20}
+  # FAO-56 Table 19 midpoints (volumetric m3/m3). Mandya soils are mostly red
+  # sandy loam to loam; the dashboard lets the user pick.
+  soils:
+    sandy_loam: {field_capacity: 0.23, wilting_point: 0.11}
+    loam: {field_capacity: 0.25, wilting_point: 0.12}
+    silt_loam: {field_capacity: 0.29, wilting_point: 0.15}
+    clay: {field_capacity: 0.36, wilting_point: 0.22}
+  default_soil: sandy_loam
+  # Application efficiency by irrigation method (typical design values).
+  irrigation_efficiency: {drip: 0.90, sprinkler: 0.75, furrow: 0.60, flood: 0.50}
+  default_method: furrow
+  # Pump discharge (m3/h). About 5 L/s for a common 5 HP borewell pump.
+  default_pump_flow_m3h: 18.0
+  # Prototype effective-rainfall rule for daily forecast rain.
+  effective_rain_fraction: 0.80
+  min_effective_rain_mm: 5.0
+  forecast_horizon_days: 14
+  # FAO-33 yield response factors (Ky) for sugarcane by stage.
+  ky: {initial: 0.75, development: 0.75, mid: 0.50, late: 0.10}
+  # Fertigation: seasonal NPK dose (kg/ha) and share applied in each stage.
+  # Placeholder values; replace with the KIAAR / UAS soil-test recommendation.
+  fertigation:
+    seasonal_npk_kg_ha: {N: 250, P2O5: 75, K2O: 190}
+    stage_split:
+      initial: {N: 0.15, P2O5: 0.50, K2O: 0.10}
+      development: {N: 0.45, P2O5: 0.35, K2O: 0.35}
+      mid: {N: 0.40, P2O5: 0.15, K2O: 0.45}
+      late: {N: 0.00, P2O5: 0.00, K2O: 0.10}
+    # Organic-carbon rating in g/kg (assumes the dataset unit is g/kg).
+    organic_carbon_g_kg: {low_below: 5.0, high_above: 7.5}
+    nitrogen_adjustment: {low: 1.25, medium: 1.00, high: 0.75}
+
+# Electricity supply windows for agricultural feeders (24 h clock). Replace
+# with the ESCOM feeder timetable for each village.
+pump_scheduling:
+  supply_windows:
+    - {start: "05:00", end: "08:00"}
+    - {start: "14:00", end: "17:00"}
+    - {start: "20:00", end: "23:00"}
+  max_concurrent_pumps_per_feeder: 25
+  prefer_morning: true
+
+advisory_llm:
+  model: claude-opus-5-5
+  effort: low

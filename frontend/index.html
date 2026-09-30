@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sugarcane Irrigation Advisory</title>
+  <meta name="description" content="AI-assisted, plot-level irrigation advisory for sugarcane (KJS-AGR-01 prototype).">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Domine:wght@500;700&family=Nunito+Sans:wght@400;600;700;800&family=Noto+Sans+Kannada:wght@400;600&family=Noto+Sans+Devanagari:wght@400;600&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C11 11 7 15.5 7 20a9 9 0 0 0 18 0c0-4.5-4-9-9-17z' fill='%232a78d6'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C11 11 7 15.5 7 20a9 9 0 0 0 18 0c0-4.5-4-9-9-17z"/></svg>
+      <div>
+        <p class="brand-org">K J Somaiya · KIAAR Sameerwadi</p>
+        <h1 class="brand-title">Irrigation Advisory for Sugarcane</h1>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="chip" id="today-chip" title="Today's forecast for the selected plot">—</div>
+      <div class="chip" id="date-chip">—</div>
+      <label class="lang-select">
+        <span class="visually-hidden">Advisory language</span>
+        <select id="language"></select>
+      </label>
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+    </div>
+  </header>
+
+  <nav class="sidebar" aria-label="Main">
+    <a href="#dashboard" data-view="dashboard" class="nav-link">Farm dashboard</a>
+    <a href="#fleet" data-view="fleet" class="nav-link">Fleet map</a>
+    <a href="#schedule" data-view="schedule" class="nav-link">Pump scheduling</a>
+    <a href="#validation" data-view="validation" class="nav-link">Model validation</a>
+    <a href="#coverage" data-view="coverage" class="nav-link">Use-case coverage</a>
+    <a href="#reviews" data-view="reviews" class="nav-link">Review log</a>
+    <div class="sidebar-foot" id="farm-card"></div>
+  </nav>
+
+  <main id="main">
+    <div class="banner" id="banner" hidden></div>
+
+    <!-- ============================== Dashboard ============================== -->
+    <section class="view" id="view-dashboard" aria-labelledby="dash-title">
+      <h2 class="visually-hidden" id="dash-title">Farm dashboard</h2>
+      <form class="filters" id="filters" autocomplete="off">
+        <label>Taluk<select id="f-taluk"></select></label>
+        <label>Village<select id="f-village"></select></label>
+        <label>Farm<select id="f-farm"></select></label>
+        <label>Planting date<input type="date" id="f-planting"></label>
+        <label class="readonly">Crop age<output id="f-age">—</output></label>
+        <label>Soil texture<select id="f-soil"></select></label>
+        <label>Irrigation method<select id="f-method"></select></label>
+        <label>Pump (m³/h)<input type="number" id="f-pump" min="1" max="200" step="1"></label>
+        <label title="Leave empty to use the ML estimate">Probe reading (m³/m³)<input type="number" id="f-sensor" min="0" max="0.6" step="0.005" placeholder="optional"></label>
+        <label class="check"><input type="checkbox" id="f-live"> Live forecast</label>
+        <button class="btn primary" type="submit" id="f-submit">Update advisory</button>
+      </form>
+
+      <div class="grid grid-top">
+        <article class="card map-card">
+          <header class="card-head"><h3>Plot view</h3><span class="muted small" id="plot-caption"></span></header>
+          <div class="map" id="plot-map" role="region" aria-label="Map of plots in the selected village"></div>
+        </article>
+
+        <article class="card advisory-card" id="advisory-card">
+          <header class="card-head"><h3>Irrigation advisory</h3><span class="tag">FAO-56 engine</span></header>
+          <div id="advisory-body" class="placeholder">Select a farm to see its advisory.</div>
+        </article>
+
+        <article class="card">
+          <header class="card-head"><h3>Weather outlook</h3><span class="muted small" id="weather-note"></span></header>
+          <div id="weather-body" class="placeholder">—</div>
+        </article>
+
+        <article class="card">
+          <header class="card-head"><h3>Alerts</h3></header>
+          <ul class="alerts" id="alerts"><li class="placeholder">—</li></ul>
+        </article>
+      </div>
+
+      <div class="grid grid-mid">
+        <article class="card">
+          <header class="card-head"><h3>Soil and sensor status</h3></header>
+          <dl class="kv" id="soil-body"></dl>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Crop status</h3></header>
+          <div id="crop-body"></div>
+        </article>
+        <article class="card wide">
+          <header class="card-head"><h3>Root-zone water balance, next 14 days</h3><span class="muted small">hover points for values</span></header>
+          <div id="balance-chart" class="chart"></div>
+          <div id="rain-chart" class="chart chart-small"></div>
+        </article>
+      </div>
+
+      <div class="grid grid-bottom">
+        <article class="card">
+          <header class="card-head"><h3>Fertigation</h3><span class="tag warn-tag">placeholder doses</span></header>
+          <div id="fert-body"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Yield risk if irrigation is delayed</h3></header>
+          <div id="yield-chart" class="chart"></div>
+          <p class="muted small">FAO-33 yield response. Relative estimate, not field-validated.</p>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Pump schedule</h3></header>
+          <div id="pump-body"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Water summary</h3></header>
+          <dl class="kv" id="water-body"></dl>
+        </article>
+      </div>
+
+      <div class="grid grid-last">
+        <article class="card">
+          <header class="card-head"><h3>Farmer message</h3><span class="muted small" id="message-lang"></span></header>
+          <div class="message" id="message-text"></div>
+          <div class="row">
+            <button class="btn" type="button" id="btn-copy">Copy</button>
+            <button class="btn" type="button" id="btn-llm">Rewrite with Claude</button>
+          </div>
+          <p class="muted small" id="message-note">Template text. Every number comes directly from the engine.</p>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Human review</h3></header>
+          <form id="review-form" class="review">
+            <label>Reviewer<select id="r-role"><option value="field_officer">Field officer</option><option value="agronomist">Agronomist</option><option value="farmer">Farmer</option></select></label>
+            <label>Decision<select id="r-decision"><option value="accepted">Accept</option><option value="modified">Modify</option><option value="rejected">Reject</option></select></label>
+            <label>Override hours<input type="number" id="r-hours" min="0" step="0.5"></label>
+            <label class="span-2">Comment<input type="text" id="r-comment" maxlength="500" placeholder="optional"></label>
+            <button class="btn primary" type="submit">Record decision</button>
+          </form>
+          <p class="muted small" id="review-note">Decisions are stored as labels for future model training.</p>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Soil-moisture model</h3><span class="tag" id="model-tag">ML</span></header>
+          <div id="model-body"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================== Fleet ============================== -->
+    <section class="view" id="view-fleet" hidden aria-labelledby="fleet-title">
+      <div class="view-head">
+        <h2 id="fleet-title">Fleet map</h2>
+        <p class="muted" id="fleet-sub">Every plot, coloured by irrigation status under the dashboard's crop and equipment settings.</p>
+      </div>
+      <div class="tiles" id="fleet-tiles"></div>
+      <div class="grid grid-fleet">
+        <article class="card map-card tall">
+          <header class="card-head"><h3>Plots by status</h3><div class="legend" id="fleet-legend"></div></header>
+          <div class="map tall" id="fleet-map" role="region" aria-label="Map of all plots by irrigation status"></div>
+        </article>
+        <article class="card">
+          <header class="card-head"><h3>Due soonest</h3><span class="muted small">select a row to open it</span></header>
+          <div class="table-wrap" id="fleet-table"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============================== Scheduling ============================== -->
+    <section class="view" id="view-schedule" hidden aria-labelledby="schedule-title">
+      <div class="view-head">
+        <h2 id="schedule-title">Pump scheduling</h2>
+        <p class="muted">Farms on one feeder share limited supply windows. Farms due soonest are served first.</p>
+      </div>
+      <form class="filters" id="schedule-form">
+        <label>Feeder (village)<select id="s-village"></select></label>
+        <label>Max pumps at once<input type="number" id="s-capacity" min="1" max="500"></label>
+        <label>Horizon (days)<input type="number" id="s-days" min="3" max="21" value="21"></label>
+        <label class="readonly">Supply windows<output id="s-windows">—</output></label>
+        <button class="btn primary" type="submit">Build schedule</button>
+      </form>
+      <div class="tiles" id="schedule-tiles"></div>
+      <article class="card">
+        <header class="card-head"><h3>Pumping sessions</h3><span class="muted small" id="schedule-note"></span></header>
+        <div id="gantt" class="chart"></div>
+      </article>
+      <article class="card">
+        <header class="card-head"><h3>Farms that cannot finish in the horizon</h3></header>
+        <div class="table-wrap" id="unscheduled"></div>
+      </article>
+    </section>
+
+    <!-- ============================== Validation ============================== -->
+    <section class="view" id="view-validation" hidden aria-labelledby="validation-title">
+      <div class="view-head">
+        <h2 id="validation-title">Model validation</h2>
+        <p class="muted">Does the soil-moisture model work on a village it has never seen?</p>
+      </div>
+      <div class="finding" id="finding"></div>
+      <div class="tiles" id="validation-tiles"></div>
+      <div class="grid grid-2">
+        <article class="card"><header class="card-head"><h3>Error by validation scheme</h3></header><img id="validation-figure" alt="Bar chart of mean absolute error for four models under random, leave-one-village-out and leave-one-taluk-out validation" class="figure"></article>
+        <article class="card"><header class="card-head"><h3>All results</h3></header><div class="table-wrap" id="validation-table"></div></article>
+      </div>
+    </section>
+
+    <!-- ============================== Coverage ============================== -->
+    <section class="view" id="view-coverage" hidden aria-labelledby="coverage-title">
+      <div class="view-head">
+        <h2 id="coverage-title">Use-case coverage</h2>
+        <p class="muted">Each AI model requested in KJS-AGR-01, how it is built here, and what limits it.</p>
+      </div>
+      <article class="card"><div class="table-wrap" id="coverage-table"></div></article>
+      <article class="card"><header class="card-head"><h3>Workflow stages</h3></header><div class="table-wrap" id="workflow-table"></div></article>
+    </section>
+
+    <!-- ============================== Reviews ============================== -->
+    <section class="view" id="view-reviews" hidden aria-labelledby="reviews-title">
+      <div class="view-head">
+        <h2 id="reviews-title">Review log</h2>
+        <p class="muted">Human decisions on advisories, newest first.</p>
+      </div>
+      <article class="card"><div class="table-wrap" id="reviews-table"></div></article>
+    </section>
+
+    <footer class="foot">Prototype for KJS-AGR-01. Irrigation quantities use FAO-56 equations with prototype parameters and are not validated prescriptions.</footer>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

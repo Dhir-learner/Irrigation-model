@@ -1,0 +1,41 @@
+model,village,mae
+Mean baseline,Ankegowdanadoddi,0.003420695786732339
+Mean baseline,Bheemanahalli,0.003695872693910479
+Mean baseline,Chikkathammanahalli,0.004452417977642842
+Mean baseline,Chowda Ghatta,0.00533479648512289
+Mean baseline,Hadya,0.004457337776513163
+Mean baseline,Hosur,0.0027610655911753097
+Mean baseline,Kachenahalli,0.005866258402952851
+Mean baseline,Laxmipura,0.033159429112929226
+Mean baseline,Malagalali,0.0026288384420536937
+Mean baseline,Talasasana,0.005745575422178177
+Linear Regression,Ankegowdanadoddi,0.021475593307515726
+Linear Regression,Bheemanahalli,0.007035181839602923
+Linear Regression,Chikkathammanahalli,0.00031324136175753866
+Linear Regression,Chowda Ghatta,0.0609226315830433
+Linear Regression,Hadya,0.017004819745355376
+Linear Regression,Hosur,0.025330044745065144
+Linear Regression,Kachenahalli,0.015945364939732008
+Linear Regression,Laxmipura,0.030645117895082875
+Linear Regression,Malagalali,0.024266572062931507
+Linear Regression,Talasasana,0.08113720698900863
+Random Forest,Ankegowdanadoddi,0.0024908737503089883
+Random Forest,Bheemanahalli,0.002964021926315266
+Random Forest,Chikkathammanahalli,0.0002370592307404346
+Random Forest,Chowda Ghatta,0.016770184616559075
+Random Forest,Hadya,1.4684965555994119e-05
+Random Forest,Hosur,0.0027416978031396533
+Random Forest,Kachenahalli,0.004354855648943682
+Random Forest,Laxmipura,0.03446816156614134
+Random Forest,Malagalali,0.004857866758734651
+Random Forest,Talasasana,0.0012233075395090619
+Gradient Boosting,Ankegowdanadoddi,0.0014411994573852332
+Gradient Boosting,Bheemanahalli,0.005178684567738261
+Gradient Boosting,Chikkathammanahalli,8.975540293311642e-05
+Gradient Boosting,Chowda Ghatta,0.02126614378594831
+Gradient Boosting,Hadya,9.187236908216411e-06
+Gradient Boosting,Hosur,0.0005835253934691237
+Gradient Boosting,Kachenahalli,0.0032211873480714236
+Gradient Boosting,Laxmipura,0.033149061373704505
+Gradient Boosting,Malagalali,0.004997686337977127
+Gradient Boosting,Talasasana,0.0009730256845254405

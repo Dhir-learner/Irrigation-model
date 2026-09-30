@@ -61,3 +61,65 @@ def log_prediction(
             ),
         )
 
+
+
+def initialize_feedback_table(path: str | Path = DEFAULT_DB_PATH) -> Path:
+    """Human-in-the-loop log: whether an advisory was accepted, modified or rejected."""
+    db_path = initialize_database(path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS advisory_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                farm_id TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                reviewer_role TEXT NOT NULL,
+                decision TEXT NOT NULL CHECK (decision IN ('accepted', 'modified', 'rejected')),
+                recommended_date TEXT,
+                recommended_hours REAL,
+                override_date TEXT,
+                override_hours REAL,
+                comment TEXT,
+                soil_moisture_source TEXT
+            )
+            """
+        )
+    return db_path
+
+
+def log_feedback(entry: dict[str, Any], path: str | Path = DEFAULT_DB_PATH) -> int:
+    from datetime import datetime, timezone
+
+    db_path = initialize_feedback_table(path)
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO advisory_feedback
+            (farm_id, timestamp, reviewer_role, decision, recommended_date, recommended_hours,
+             override_date, override_hours, comment, soil_moisture_source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                entry["farm_id"],
+                entry.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+                entry.get("reviewer_role", "field_officer"),
+                entry["decision"],
+                entry.get("recommended_date"),
+                entry.get("recommended_hours"),
+                entry.get("override_date"),
+                entry.get("override_hours"),
+                entry.get("comment"),
+                entry.get("soil_moisture_source"),
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def read_feedback(path: str | Path = DEFAULT_DB_PATH, limit: int = 200) -> list[dict[str, Any]]:
+    db_path = initialize_feedback_table(path)
+    with sqlite3.connect(db_path) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT * FROM advisory_feedback ORDER BY id DESC LIMIT ?", (int(limit),)
+        ).fetchall()
+    return [dict(row) for row in rows]
