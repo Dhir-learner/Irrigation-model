@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getOptions } from '../api.js'
+import { getHealth } from '../api.js'
 import { useTheme } from '../context.jsx'
 
 const LANGS = { en: 'English', kn: '\u0C95\u0CA8\u0CCD\u0CA8\u0CA1', hi: '\u0939\u093F\u0902\u0926\u0940', mr: '\u092E\u0930\u093E\u0920\u0940' }
@@ -26,7 +26,16 @@ const MoonIcon = () => (
 
 export default function Topbar({ language, onLanguageChange }) {
   const { theme, toggleTheme } = useTheme()
-  const { data: opts } = useQuery({ queryKey: ['options'], queryFn: getOptions, staleTime: Infinity })
+  const { data: health, error: healthError } = useQuery({
+    queryKey: ['health'], queryFn: getHealth, refetchInterval: 60000, retry: 0,
+  })
+  const apiState = healthError ? 'down' : !health ? 'pending' : health.model_available ? 'ok' : 'warn'
+  const apiLabel = {
+    ok: `API online${health?.model_name ? ' \u00B7 ' + health.model_name : ''}`,
+    warn: 'API online \u00B7 model missing',
+    down: 'API unreachable',
+    pending: 'Connecting\u2026',
+  }[apiState]
 
   const today = new Date().toLocaleDateString('en-IN', {
     weekday: 'short', day: 'numeric', month: 'short'
@@ -47,8 +56,11 @@ export default function Topbar({ language, onLanguageChange }) {
       </div>
 
       <div className="topbar-right">
-        <div className="chip">{today}</div>
-        <div className="chip">KJS-AGR-01</div>
+        <div className={`chip api-status ${apiState}`} title={healthError?.message || apiLabel}>
+          <span className="dot" aria-hidden="true" />{apiLabel}
+        </div>
+        <div className="chip hide-sm">{today}</div>
+        <div className="chip hide-sm">KJS-AGR-01</div>
 
         <label className="lang-select">
           <span className="visually-hidden">Advisory language</span>

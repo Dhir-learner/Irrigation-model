@@ -137,6 +137,56 @@ def test_frontend_endpoints_and_static_app(trained_model_path, tmp_path, monkeyp
         assert client.get("/validation").status_code in {200, 404}
 
         page = client.get("/app/")
-        assert page.status_code == 200 and "Irrigation Advisory for Sugarcane" in page.text
-        assert client.get("/app/app.js").status_code == 200
+        assert page.status_code == 200 and '<div id="root">' in page.text
         assert client.get("/", follow_redirects=False).headers["location"] == "/app/"
+
+
+def test_empty_farm_id_and_unknown_routes_explain_themselves(trained_model_path, tmp_path, monkeypatch):
+    """Regression: the dashboard posted to /farms//plan after a Taluk change and showed {"detail":"Not Found"}."""
+    monkeypatch.setattr(main, "MODEL_PATH", trained_model_path)
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "app.db")
+    main._artifact.cache_clear()
+    with TestClient(main.app) as client:
+        missing = client.post("/farms//plan", json={"crop_age_days": 180})
+        assert missing.status_code == 404
+        assert "POST /farms//plan" in missing.json()["detail"]
+        blank = client.post("/farms/%20/plan", json={"crop_age_days": 180})
+        assert blank.status_code == 422 and "empty" in blank.json()["detail"]
+
+
+def test_calibrated_fleet_spreads_statuses_and_what_if_uses_farm_record(trained_model_path, tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "MODEL_PATH", trained_model_path)
+    monkeypatch.setattr(main, "DB_PATH", tmp_path / "app.db")
+    main._artifact.cache_clear()
+    with TestClient(main.app) as client:
+        for soil in ("sandy_loam", "clay"):
+            fleet = client.get("/fleet", params={"crop_age_days": 180, "soil_type": soil}).json()
+            statuses = {row["status"] for row in fleet}
+            # The raw satellite value used to send every farm to one status per soil type.
+            assert len(statuses) >= 2, (soil, statuses)
+
+        farm_id = client.get("/farms").json()[0]["farm_id"]
+        plan = client.post(f"/farms/{farm_id}/plan", json={"crop_age_days": 180}).json()
+        calibration = plan["soil_moisture_calibration"]
+        assert calibration["method"] == "percentile_rank" and 0 <= calibration["relative_wetness"] <= 1
+
+        sensor = client.post(f"/farms/{farm_id}/plan", json={"crop_age_days": 180, "sensor_soil_moisture": 0.2}).json()
+        assert sensor["soil_moisture_used"] == 0.2 and sensor["soil_moisture_calibration"] is None
+
+        result = client.post(f"/farms/{farm_id}/what-if", json={"crop_age_days": 180, "changes": {"Rainfall_mm": 700}})
+        assert result.status_code == 200, result.text
+        body = result.json()
+        detail = client.get(f"/farms/{farm_id}").json()
+        assert body["original"]["model"]["predicted_soil_moisture"] == detail["model"]["predicted_soil_moisture"]
+        assert {"status", "days_until_irrigation", "volume_m3"} <= set(body["simulated"]["plan"])
+        bad = client.post(f"/farms/{farm_id}/what-if", json={"crop_age_days": 180, "changes": {"Nope": 1}})
+        assert bad.status_code == 422
+
+        analytics = client.get("/fleet/analytics", params={"crop_age_days": 180}).json()
+        assert analytics["totals"]["farms"] == 1000
+        assert sum(v["farms"] for v in analytics["villages"]) == 1000
+        assert len(analytics["demand_calendar"]) == 14
+
+        options = client.get("/options").json()
+        assert options["feature_ranges"]["Rainfall_mm"]["max"] > options["feature_ranges"]["Rainfall_mm"]["min"]
+        assert client.get("/model-info").json()["feature_list"]

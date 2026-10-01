@@ -9,12 +9,15 @@ from pathlib import Path
 from typing import Any, Literal
 
 import json
+import os
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src.database import (
     DEFAULT_DB_PATH,
@@ -28,7 +31,16 @@ from src.advisory import load_config
 from src.coverage import AI_MODELS, WORKFLOW_STAGES
 from src.decision import farm_decision
 from src.features import parse_geometry
-from src.service import clean, farm_row, farm_table, fleet_status
+from src.service import (
+    clean,
+    farm_row,
+    farm_table,
+    feature_ranges,
+    fleet_analytics,
+    fleet_status,
+    soil_moisture_reference,
+    wetness_percentile,
+)
 from src.multilingual import LANGUAGES, llm_advisory, template_advisory
 from src.predict import load_artifact, predict_record, what_if
 from src.scheduling import schedule_feeder
@@ -52,7 +64,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="AI Irrigation Advisory API",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
     description=(
         "Prototype soil-moisture prediction, FAO-56 irrigation planning, pump scheduling, "
@@ -60,6 +72,24 @@ app = FastAPI(
         "rule-based estimates with prototype parameters, not validated prescriptions."
     ),
 )
+
+# The bundled frontend is same-origin; CORS only matters when the UI is hosted elsewhere
+# (for example `vite preview` or a separate static host). Override with CORS_ORIGINS.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in os.environ.get("CORS_ORIGINS", "*").split(",") if origin.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error(request: Request, error: StarletteHTTPException) -> JSONResponse:
+    """Name the method and path on unmatched routes so a bad URL is obvious in the UI."""
+    detail = error.detail
+    if error.status_code == 404 and detail == "Not Found":
+        detail = f"No API route for {request.method} {request.url.path}"
+    return JSONResponse({"detail": detail}, status_code=error.status_code, headers=getattr(error, "headers", None))
 
 
 class PredictionInput(BaseModel):
@@ -100,7 +130,15 @@ def _model_input(payload: PredictionInput) -> dict[str, Any]:
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "model_available": Path(MODEL_PATH).exists()}
+    available = Path(MODEL_PATH).exists()
+    body: dict[str, Any] = {"status": "ok", "model_available": available, "version": app.version}
+    if available:
+        try:
+            body["model_name"] = _artifact()["metadata"]["model_name"]
+            body["farms"] = int(len(farm_table(str(MODEL_PATH))))
+        except Exception as error:  # report, do not fail the health probe
+            body["model_error"] = f"{type(error).__name__}: {error}"
+    return body
 
 
 @app.post("/predict")
@@ -131,14 +169,21 @@ def simulate(payload: WhatIfRequest) -> dict[str, Any]:
 @app.get("/model-info")
 def model_info() -> dict[str, Any]:
     metadata = _artifact()["metadata"]
-    return {
+    body = {
         "model_name": metadata["model_name"],
         "target": metadata["target"],
         "training_date": metadata["trained_at"],
         "feature_list": metadata["raw_feature_columns"],
         "test_metrics": metadata["test_metrics"],
         "split_strategy": metadata["split_strategy"],
+        "feature_importance": [],
+        "model_comparison": [],
     }
+    for key, name in (("feature_importance", "global_feature_importance.csv"), ("model_comparison", "model_comparison.csv")):
+        path = REPORTS_DIR / name
+        if path.exists():
+            body[key] = [{k: clean(v) for k, v in row.items()} for row in pd.read_csv(path).to_dict("records")]
+    return body
 
 
 class IrrigationPlanRequest(PredictionInput):
@@ -193,8 +238,10 @@ def irrigation_plan_endpoint(payload: IrrigationPlanRequest) -> dict[str, Any]:
     """FAO-56 irrigation plan, fertigation, yield-loss table, pump sessions and advisory text."""
     features = _model_input(payload)
     predicted = None
+    reference = None
     if payload.sensor_soil_moisture is None:
         predicted = predict_record(_artifact(), features, farm_id=payload.farm_id)["advisory"]["predicted_soil_moisture"]
+        reference = soil_moisture_reference(str(MODEL_PATH))
     record = {**features, ".geo": features.get("geometry"), "Farm_Area_ha": payload.Farm_Area_ha or 1.0}
     forecast = {"rain_mm": payload.forecast_rain_mm, "temperature_c": payload.forecast_temperature_c}
     return farm_decision(
@@ -208,6 +255,7 @@ def irrigation_plan_endpoint(payload: IrrigationPlanRequest) -> dict[str, Any]:
         forecast=forecast,
         start_date=payload.start_date,
         language=payload.language,
+        soil_moisture_reference=reference,
     )
 
 
@@ -242,7 +290,7 @@ def feedback(payload: FeedbackRequest) -> dict[str, Any]:
 
 
 @app.get("/feedback")
-def feedback_list(limit: int = 50) -> list[dict[str, Any]]:
+def feedback_list(limit: int = Query(50, ge=1, le=5000)) -> list[dict[str, Any]]:
     return read_feedback(DB_PATH, limit)
 
 
@@ -258,6 +306,9 @@ FARM_FIELDS = [
 
 def _farm_or_404(farm_id: str) -> pd.Series:
     _artifact()  # 503 when no model is trained
+    farm_id = farm_id.strip()
+    if not farm_id:
+        raise HTTPException(status_code=422, detail="Select a farm first: the farm ID is empty.")
     farm = farm_row(str(MODEL_PATH), farm_id)
     if farm is None:
         raise HTTPException(status_code=404, detail=f"Unknown farm: {farm_id}")
@@ -279,7 +330,19 @@ def options() -> dict[str, Any]:
         "supply_windows": config["pump_scheduling"]["supply_windows"],
         "max_concurrent_pumps_per_feeder": config["pump_scheduling"]["max_concurrent_pumps_per_feeder"],
         "stage_days": agronomy["stage_days"],
+        "kc": agronomy["kc"],
+        "thresholds": config["irrigation"],
+        "feature_ranges": _feature_ranges_or_empty(),
     }
+
+
+def _feature_ranges_or_empty() -> dict[str, Any]:
+    if not Path(MODEL_PATH).exists():
+        return {}
+    try:
+        return feature_ranges(str(MODEL_PATH))
+    except Exception:  # options must still load without a model
+        return {}
 
 
 @app.get("/farms")
@@ -296,6 +359,12 @@ def farms() -> list[dict[str, Any]]:
             "latitude": clean(row.Latitude),
             "longitude": clean(row.Longitude),
             "soil_moisture": round(float(row.Predicted_Soil_Moisture), 4),
+            "risk_level": row.Risk_Level,
+            "ndvi": clean(row.NDVI),
+            "lai": clean(row.LAI),
+            "temperature_c": clean(row.Temperature_C),
+            "rainfall_mm": clean(row.Rainfall_mm),
+            "relative_humidity": clean(row.Relative_Humidity),
         }
         for row in table.itertuples()
     ]
@@ -341,7 +410,9 @@ def farm_detail(farm_id: str) -> dict[str, Any]:
             "predicted_soil_moisture": result["advisory"]["predicted_soil_moisture"],
             "risk_level": result["advisory"]["risk_level"],
             "model_name": result["model_name"],
-            "top_factors": result["explanation"]["contributions"][:6],
+            "model_confidence": result["advisory"]["model_confidence"],
+            "relative_wetness": round(wetness_percentile(str(MODEL_PATH), float(farm["Predicted_Soil_Moisture"])), 3),
+            "top_factors": result["explanation"]["contributions"][:8],
         },
     }
 
@@ -355,6 +426,21 @@ class FarmPlanRequest(BaseModel):
     forecast_rain_mm: list[float] = Field(default_factory=list)
     use_live_weather: bool = False
     language: Literal["en", "kn", "hi", "mr"] = "en"
+
+
+def _plan_for(farm: pd.Series, payload: FarmPlanRequest, forecast: dict[str, Any], soil_moisture: float | None = None) -> dict[str, Any]:
+    return farm_decision(
+        farm,
+        predicted_soil_moisture=float(farm["Predicted_Soil_Moisture"] if soil_moisture is None else soil_moisture),
+        crop_age_days=payload.crop_age_days,
+        sensor_soil_moisture=payload.sensor_soil_moisture,
+        soil_type=payload.soil_type,
+        irrigation_method=payload.irrigation_method,
+        pump_flow_m3h=payload.pump_flow_m3h,
+        forecast=forecast,
+        language=payload.language,
+        soil_moisture_reference=soil_moisture_reference(str(MODEL_PATH)),
+    )
 
 
 @app.post("/farms/{farm_id}/plan")
@@ -371,19 +457,59 @@ def farm_plan(farm_id: str, payload: FarmPlanRequest) -> dict[str, Any]:
             weather_note = "live Open-Meteo forecast"
         except Exception as error:  # network failure falls back to the manual/no-rain projection
             weather_note = f"live forecast unavailable ({type(error).__name__}); {weather_note}"
-    result = farm_decision(
-        farm,
-        predicted_soil_moisture=float(farm["Predicted_Soil_Moisture"]),
-        crop_age_days=payload.crop_age_days,
-        sensor_soil_moisture=payload.sensor_soil_moisture,
-        soil_type=payload.soil_type,
-        irrigation_method=payload.irrigation_method,
-        pump_flow_m3h=payload.pump_flow_m3h,
-        forecast=forecast,
-        language=payload.language,
-    )
+    result = _plan_for(farm, payload, forecast)
     result["weather"] = {"note": weather_note, "forecast": forecast or None}
     return result
+
+
+class FarmWhatIfRequest(FarmPlanRequest):
+    changes: dict[str, float] = Field(
+        default_factory=dict,
+        description="Model inputs to override, e.g. {\"Rainfall_mm\": 700, \"Temperature_C\": 26}.",
+    )
+
+
+@app.post("/farms/{farm_id}/what-if")
+def farm_what_if(farm_id: str, payload: FarmWhatIfRequest) -> dict[str, Any]:
+    """Re-run the model and the FAO-56 plan with changed inputs for a stored farm.
+
+    Unlike ``/what-if``, the caller only sends the changes; every other input comes
+    from the farm's own record, so the baseline is the farm's real prediction.
+    """
+    farm = _farm_or_404(farm_id)
+    allowed = set(_artifact()["metadata"]["raw_feature_columns"])
+    unknown = sorted(set(payload.changes) - allowed)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown model inputs: {', '.join(unknown)}")
+    model = what_if(_artifact(), farm, payload.changes)
+    simulated_moisture = model["simulated"]["advisory"]["predicted_soil_moisture"]
+    forecast = {"rain_mm": payload.forecast_rain_mm} if payload.forecast_rain_mm else {}
+    scenario = payload.model_copy(update={"sensor_soil_moisture": None})
+    baseline_plan = _plan_for(farm, scenario, forecast)
+    simulated_plan = _plan_for(farm, scenario, forecast, soil_moisture=simulated_moisture)
+
+    def summary(bundle: dict[str, Any]) -> dict[str, Any]:
+        rec = bundle["plan"]["recommendation"]
+        return {
+            "soil_moisture_model": bundle["soil_moisture_calibration"]["model_value"] if bundle["soil_moisture_calibration"] else None,
+            "relative_wetness": (bundle["soil_moisture_calibration"] or {}).get("relative_wetness"),
+            "rootzone_moisture": bundle["soil_moisture_used"],
+            "status": rec["status"],
+            "next_irrigation_date": rec["next_irrigation_date"],
+            "days_until_irrigation": rec["days_until_irrigation"],
+            "volume_m3": rec["volume_m3"],
+            "duration_hours": rec["duration_hours"],
+            "stress_index": bundle["plan"]["water_stress"]["stress_index"],
+        }
+
+    return {
+        "simulation_note": model["simulation_note"],
+        "changes": payload.changes,
+        "prediction_change": model["prediction_change"],
+        "original": {"model": model["original"]["advisory"], "plan": summary(baseline_plan)},
+        "simulated": {"model": model["simulated"]["advisory"], "plan": summary(simulated_plan)},
+        "top_factors": model["simulated"]["explanation"]["contributions"][:8],
+    }
 
 
 @app.get("/fleet")
@@ -397,6 +523,26 @@ def fleet(
     _artifact()
     agronomy = load_config()["agronomy"]
     return fleet_status(
+        str(MODEL_PATH),
+        crop_age_days,
+        soil_type or agronomy["default_soil"],
+        irrigation_method or agronomy["default_method"],
+        float(pump_flow_m3h or agronomy["default_pump_flow_m3h"]),
+        date.today().isoformat(),
+    )
+
+
+@app.get("/fleet/analytics")
+def fleet_analytics_endpoint(
+    crop_age_days: int = Query(180, ge=0, le=500),
+    soil_type: str | None = None,
+    irrigation_method: str | None = None,
+    pump_flow_m3h: float | None = Query(None, gt=0),
+) -> dict[str, Any]:
+    """Village summaries, a 14-day irrigation demand calendar and feature statistics."""
+    _artifact()
+    agronomy = load_config()["agronomy"]
+    return fleet_analytics(
         str(MODEL_PATH),
         crop_age_days,
         soil_type or agronomy["default_soil"],

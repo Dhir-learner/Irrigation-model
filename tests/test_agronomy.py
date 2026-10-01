@@ -95,3 +95,28 @@ def test_fertigation_converts_nutrients_to_products():
     assert products["MOP"] * 0.60 == pytest.approx(nutrients["K2O"], abs=0.02)
     supplied_n = products["Urea"] * 0.46 + products["MAP (12-61-0)"] * 0.12
     assert supplied_n == pytest.approx(nutrients["N"], abs=0.02)
+
+
+def test_percentile_rank_calibration_maps_onto_available_water():
+    from src.calibration import percentile_rank, rootzone_moisture
+
+    reference = [0.21, 0.21, 0.22, 0.25]
+    assert percentile_rank(0.21, reference) == 0.25  # mid-rank of the tied pair
+    assert percentile_rank(0.30, reference) == 1.0
+    config = {"soil_moisture_calibration": {"method": "percentile_rank", "available_fraction_at_driest": 0.3, "available_fraction_at_wettest": 0.9}}
+    theta, info = rootzone_moisture(0.25, reference, field_capacity=0.30, wilting_point=0.10, config=config)
+    assert info["relative_wetness"] == 0.875
+    assert abs(theta - (0.10 + (0.3 + 0.6 * 0.875) * 0.20)) < 1e-9
+    absolute, info = rootzone_moisture(0.25, reference, 0.30, 0.10, {"soil_moisture_calibration": {"method": "absolute"}})
+    assert absolute == 0.25 and info["method"] == "absolute"
+
+
+def test_forecast_gaps_keep_later_days_on_their_dates():
+    from src.decision import farm_decision
+
+    farm = {"Farm_ID": "F", "Temperature_C": 25.0, "Farm_Area_ha": 1.0, ".geo": None}
+    result = farm_decision(farm, None, 180, sensor_soil_moisture=0.2, forecast={"rain_mm": [0, 0, 30], "temperature_c": [None, 30.0, 30.0]})
+    projection = result["plan"]["projection"]
+    assert projection[0]["temperature_c"] == 25.0  # gap falls back to the record value
+    assert projection[1]["temperature_c"] == 30.0  # not shifted onto day 0
+    assert projection[2]["rain_mm"] == 30.0

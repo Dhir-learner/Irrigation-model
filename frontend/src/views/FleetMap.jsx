@@ -1,37 +1,35 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getFarmsGeoJSON, getFleet } from '../api.js'
-import FarmMap from '../components/FarmMap.jsx'
+import { getFarmsGeoJSON, getFleet, downloadCSV } from '../api.js'
+import FarmMap, { STATUS_COLOR } from '../components/FarmMap.jsx'
 import { DueDayChart } from '../components/Charts.jsx'
 
 const STATUS = {
-  IRRIGATE_NOW:  { label: 'Irrigate now',  color: '#ef4444' },
-  IRRIGATE_SOON: { label: 'Due in 3 days', color: '#f59e0b' },
-  NOT_REQUIRED:  { label: 'Not required',  color: '#22c55e' },
+  IRRIGATE_NOW:  { label: 'Irrigate now', icon: '●' },
+  IRRIGATE_SOON: { label: 'Due within 3 days', icon: '▲' },
+  NOT_REQUIRED:  { label: 'Not required yet', icon: '✓' },
+}
+const PAGE = 50
+
+export function fleetQueryParams(settings) {
+  return {
+    crop_age_days: Math.min(settings?.cropAge ?? 180, 500),
+    soil_type: settings?.soilType || undefined,
+    irrigation_method: settings?.method || undefined,
+    pump_flow_m3h: Number(settings?.pumpFlow) > 0 ? Number(settings.pumpFlow) : undefined,
+  }
 }
 
-function StatTile({ label, value, color }) {
-  return (
-    <div className="stat-tile">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value" style={color ? { color } : {}}>{value ?? '\u2014'}</div>
-    </div>
-  )
-}
-
-export default function FleetMap({ settings }) {
+export default function FleetMap({ settings, onOpenFarm }) {
   const [talukFilter, setTalukFilter] = useState('All')
   const [villageFilter, setVillageFilter] = useState('All')
-  const cropAge = settings?.cropAge || 180
+  const [statusFilter, setStatusFilter] = useState(new Set(Object.keys(STATUS)))
+  const [search, setSearch] = useState('')
+  const [shown, setShown] = useState(PAGE)
 
-  const fleetParams = { crop_age_days: cropAge }
-  if (settings?.soilType) fleetParams.soil_type = settings.soilType
-  if (settings?.method) fleetParams.irrigation_method = settings.method
-
-  const { data: fleet = [], isLoading } = useQuery({
-    queryKey: ['fleet', fleetParams],
-    queryFn: () => getFleet(fleetParams),
-    staleTime: 60000,
+  const fleetParams = fleetQueryParams(settings)
+  const { data: fleet = [], isLoading, error } = useQuery({
+    queryKey: ['fleet', fleetParams], queryFn: () => getFleet(fleetParams), staleTime: 60000,
   })
 
   const geoParams = useMemo(() => {
@@ -40,137 +38,159 @@ export default function FleetMap({ settings }) {
     if (villageFilter !== 'All') p.village = villageFilter
     return p
   }, [talukFilter, villageFilter])
+  const { data: geojson } = useQuery({ queryKey: ['geojson', geoParams], queryFn: () => getFarmsGeoJSON(geoParams), staleTime: 300000 })
 
-  const { data: geojson } = useQuery({
-    queryKey: ['geojson', geoParams],
-    queryFn: () => getFarmsGeoJSON(geoParams),
-    staleTime: 60000,
-  })
-
-  const taluks = useMemo(() => ['All', ...new Set(fleet.map(f => f.taluk))].sort(), [fleet])
-
-  const filteredFleet = useMemo(() => {
-    let f = fleet
-    if (talukFilter !== 'All') f = f.filter(x => x.taluk === talukFilter)
-    if (villageFilter !== 'All') f = f.filter(x => x.village === villageFilter)
-    return f
-  }, [fleet, talukFilter, villageFilter])
-
+  const taluks = useMemo(() => ['All', ...[...new Set(fleet.map(f => f.taluk))].sort()], [fleet])
   const villages = useMemo(() =>
-    ['All', ...new Set(fleet.filter(f => talukFilter === 'All' || f.taluk === talukFilter).map(f => f.village))].sort()
+    ['All', ...[...new Set(fleet.filter(f => talukFilter === 'All' || f.taluk === talukFilter).map(f => f.village))].sort()]
   , [fleet, talukFilter])
+
+  const areaFleet = useMemo(() => fleet.filter(f =>
+    (talukFilter === 'All' || f.taluk === talukFilter) && (villageFilter === 'All' || f.village === villageFilter)
+  ), [fleet, talukFilter, villageFilter])
 
   const counts = useMemo(() => {
     const c = { IRRIGATE_NOW: 0, IRRIGATE_SOON: 0, NOT_REQUIRED: 0 }
-    filteredFleet.forEach(f => { if (c[f.status] !== undefined) c[f.status]++ })
+    areaFleet.forEach(f => { c[f.status] = (c[f.status] || 0) + 1 })
     return c
-  }, [filteredFleet])
+  }, [areaFleet])
 
-  const waterDue7 = useMemo(() =>
-    filteredFleet.filter(f => f.due_day <= 7).reduce((s, f) => s + (f.volume_m3 || 0), 0)
-  , [filteredFleet])
+  const visibleFleet = useMemo(() => areaFleet.filter(f => statusFilter.has(f.status)), [areaFleet, statusFilter])
+  const tableRows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return visibleFleet
+      .filter(f => !q || f.farm_id.toLowerCase().includes(q) || f.village.toLowerCase().includes(q))
+      .sort((a, b) => (a.due_day - b.due_day) || (b.depletion_ratio - a.depletion_ratio))
+  }, [visibleFleet, search])
 
-  // Build fleetData lookup for map colouring
-  const fleetDataForMap = filteredFleet.map(f => ({
-    farm_id: f.farm_id,
-    status: f.status,
-    next_irrigation_date: f.next_irrigation_date,
-    duration_hours: f.hours,
-  }))
+  const week = useMemo(() => {
+    const due = areaFleet.filter(f => f.due_day <= 7)
+    return {
+      volume: due.reduce((s, f) => s + (f.volume_m3 || 0), 0),
+      hours: due.reduce((s, f) => s + (f.hours || 0), 0),
+    }
+  }, [areaFleet])
+
+  const toggleStatus = key => setStatusFilter(prev => {
+    const next = new Set(prev)
+    if (next.has(key) && next.size > 1) next.delete(key)
+    else next.add(key)
+    return next
+  })
+
+  // Hide polygons for statuses that are filtered out.
+  const visibleGeo = useMemo(() => {
+    if (!geojson) return geojson
+    const keep = new Set(visibleFleet.map(f => f.farm_id))
+    return { ...geojson, features: geojson.features.filter(f => keep.has(f.properties.farm_id)) }
+  }, [geojson, visibleFleet])
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">Fleet Map</h1>
-        <p className="page-sub">Every plot coloured by irrigation status under shared crop and equipment settings.</p>
+      <div className="page-header flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="page-title">Fleet Map</h1>
+          <p className="page-sub">
+            Every plot under shared settings: day {fleetParams.crop_age_days} &middot; {settings?.soilType?.replace(/_/g, ' ')} &middot; {settings?.method} &middot; {fleetParams.pump_flow_m3h ?? '—'} m³/h.
+            Change them on the Farm Dashboard.
+          </p>
+        </div>
+        <button className="btn" disabled={!tableRows.length} onClick={() => downloadCSV(tableRows, `fleet_status_${new Date().toISOString().slice(0, 10)}.csv`)}>
+          Export CSV
+        </button>
       </div>
 
-      {/* Filters */}
+      {error && <div className="alert error mb-4">Could not load fleet: {error.message}</div>}
+
       <div className="filter-bar mb-5">
         <div className="field">
-          <label>Taluk</label>
-          <select value={talukFilter} onChange={e => { setTalukFilter(e.target.value); setVillageFilter('All') }}>
+          <label htmlFor="fl-taluk">Taluk</label>
+          <select id="fl-taluk" value={talukFilter} onChange={e => { setTalukFilter(e.target.value); setVillageFilter('All') }}>
             {taluks.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
         <div className="field">
-          <label>Village</label>
-          <select value={villageFilter} onChange={e => setVillageFilter(e.target.value)}>
+          <label htmlFor="fl-village">Village</label>
+          <select id="fl-village" value={villageFilter} onChange={e => setVillageFilter(e.target.value)}>
             {villages.map(v => <option key={v}>{v}</option>)}
           </select>
         </div>
-      </div>
-
-      {/* KPI tiles */}
-      <div className="stat-grid mb-5">
-        <StatTile label="Total farms" value={filteredFleet.length} />
-        <StatTile label="Irrigate now" value={counts.IRRIGATE_NOW} color="#ef4444" />
-        <StatTile label="Due in 3 days" value={counts.IRRIGATE_SOON} color="#f59e0b" />
-        <StatTile label="Not required" value={counts.NOT_REQUIRED} color="#22c55e" />
-        <StatTile label="Water due in 7d" value={waterDue7.toLocaleString('en-IN', { maximumFractionDigits: 0 }) + ' m\u00B3'} />
-      </div>
-
-      {/* Map */}
-      <div className="card mb-5">
-        <div className="card-header">
-          <span className="card-title">Plots by irrigation status</span>
-          <div style={{ display: 'flex', gap: 12 }}>
+        <div className="field">
+          <span className="field-label">Show status</span>
+          <div className="chip-toggle-group">
             {Object.entries(STATUS).map(([k, v]) => (
-              <span key={k} style={{ fontSize: '0.75rem', color: v.color, fontWeight: 600 }}>
-                &bull; {v.label}
-              </span>
+              <button key={k} type="button" className={'chip-toggle' + (statusFilter.has(k) ? ' on' : '')}
+                aria-pressed={statusFilter.has(k)} onClick={() => toggleStatus(k)}>
+                <span className="swatch" style={{ background: STATUS_COLOR[k] }} aria-hidden="true" />{v.label}
+              </button>
             ))}
           </div>
         </div>
-        {isLoading
-          ? <div className="skeleton" style={{ height: 440 }} />
-          : <FarmMap geojson={geojson} fleetData={fleetDataForMap} height={440} tall />
-        }
       </div>
 
-      {/* Due-day chart + table */}
+      <div className="stat-grid mb-5">
+        <div className="stat-tile"><div className="stat-label">Farms in area</div><div className="stat-value">{areaFleet.length}</div></div>
+        {Object.entries(STATUS).map(([k, v]) => (
+          <div className="stat-tile" key={k}>
+            <div className="stat-label"><span style={{ color: STATUS_COLOR[k] }} aria-hidden="true">{v.icon}</span> {v.label}</div>
+            <div className="stat-value">{counts[k]}</div>
+            <div className="stat-delta">{areaFleet.length ? ((100 * counts[k]) / areaFleet.length).toFixed(0) : 0}% of farms</div>
+          </div>
+        ))}
+        <div className="stat-tile">
+          <div className="stat-label">Water due in 7 days</div>
+          <div className="stat-value">{Math.round(week.volume).toLocaleString('en-IN')} m³</div>
+          <div className="stat-delta">{Math.round(week.hours).toLocaleString('en-IN')} pump-hours</div>
+        </div>
+      </div>
+
+      <div className="card mb-5">
+        <div className="card-header">
+          <span className="card-title">Plots by irrigation status</span>
+          <span className="text-muted text-sm">click a plot to open its advisory</span>
+        </div>
+        {isLoading
+          ? <div className="skeleton" style={{ height: 460 }} />
+          : <FarmMap geojson={visibleGeo} fleetData={visibleFleet} height={460} selectedId={settings?.farmId} onFarmClick={onOpenFarm} />}
+      </div>
+
       <div className="grid-2 gap-4">
         <div className="card">
-          <div className="card-header">
-            <span className="card-title">Farms by days until irrigation</span>
-          </div>
-          <div className="card-body">
-            <DueDayChart fleet={filteredFleet} />
-          </div>
+          <div className="card-header"><span className="card-title">Farms by days until irrigation</span></div>
+          <div className="card-body"><DueDayChart fleet={visibleFleet} /></div>
         </div>
         <div className="card">
           <div className="card-header">
             <span className="card-title">Due soonest</span>
-            <span className="text-muted text-sm">sorted by urgency</span>
+            <input type="search" className="inline-search" placeholder="Filter farm or village" value={search}
+              onChange={e => { setSearch(e.target.value); setShown(PAGE) }} aria-label="Filter table" />
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            <div className="table-wrap">
-              <table className="data-table">
+            <div className="table-wrap" style={{ maxHeight: 420 }}>
+              <table className="data-table clickable">
                 <thead>
-                  <tr>
-                    <th>Farm ID</th><th>Village</th><th>Status</th><th>Due (days)</th><th>Hours</th><th>Stress</th>
-                  </tr>
+                  <tr><th>Farm</th><th>Village</th><th>Status</th><th className="num">Due</th><th className="num">Depleted</th><th className="num">Hours</th></tr>
                 </thead>
                 <tbody>
-                  {[...filteredFleet]
-                    .sort((a, b) => (a.due_day - b.due_day) || (b.stress_index - a.stress_index))
-                    .map(f => (
-                    <tr key={f.farm_id}>
-                      <td style={{ fontWeight: 600 }}>{f.farm_id}</td>
+                  {tableRows.slice(0, shown).map(f => (
+                    <tr key={f.farm_id} onClick={() => onOpenFarm(f.farm_id)} tabIndex={0}
+                      onKeyDown={e => e.key === 'Enter' && onOpenFarm(f.farm_id)} title="Open advisory">
+                      <td className="font-bold">{f.farm_id}</td>
                       <td>{f.village}</td>
-                      <td>
-                        <span style={{ color: STATUS[f.status]?.color || '#38bdf8', fontWeight: 600, fontSize: '0.78rem' }}>
-                          {f.status?.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td>{f.due_day}</td>
-                      <td>{f.hours?.toFixed(1)}</td>
-                      <td>{f.stress_index?.toFixed(2)}</td>
+                      <td><span className="status-dot" style={{ background: STATUS_COLOR[f.status] }} aria-hidden="true" />{STATUS[f.status]?.label}</td>
+                      <td className="num">{f.due_day === 0 ? 'today' : `${f.due_day} d`}</td>
+                      <td className="num">{(f.depletion_ratio * 100).toFixed(0)}%</td>
+                      <td className="num">{f.hours?.toFixed(1)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            {tableRows.length > shown && (
+              <button className="btn ghost full" onClick={() => setShown(s => s + PAGE)}>
+                Show more ({tableRows.length - shown} remaining)
+              </button>
+            )}
           </div>
         </div>
       </div>

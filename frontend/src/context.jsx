@@ -1,37 +1,35 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 
 const ToastCtx = createContext(null)
 const ThemeCtx = createContext(null)
 
+function storedTheme() {
+  try { return localStorage.getItem('theme') || 'dark' } catch { return 'dark' }
+}
+
 export function AppProviders({ children }) {
   const [toasts, setToasts] = useState([])
-  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
+  const [theme, setTheme] = useState(storedTheme)
+  const nextId = useRef(0)
 
   const toast = useCallback((msg, type = 'info') => {
-    const id = Date.now()
+    const id = ++nextId.current
     setToasts(t => [...t, { id, msg, type }])
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000)
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4500)
   }, [])
 
-  const toggleTheme = useCallback(() => {
-    setTheme(t => {
-      const next = t === 'dark' ? 'light' : 'dark'
-      localStorage.setItem('theme', next)
-      document.documentElement.setAttribute('data-theme', next)
-      return next
-    })
-  }, [])
-
-  // Apply on mount
-  if (typeof document !== 'undefined') {
+  useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-  }
+    try { localStorage.setItem('theme', theme) } catch { /* private mode */ }
+  }, [theme])
+
+  const toggleTheme = useCallback(() => setTheme(t => (t === 'dark' ? 'light' : 'dark')), [])
 
   return (
     <ThemeCtx.Provider value={{ theme, toggleTheme }}>
       <ToastCtx.Provider value={{ toast }}>
         {children}
-        <div className="toast-container">
+        <div className="toast-container" role="status" aria-live="polite">
           {toasts.map(t => (
             <div key={t.id} className={`toast alert ${t.type}`}>{t.msg}</div>
           ))}

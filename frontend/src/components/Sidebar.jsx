@@ -1,4 +1,13 @@
+import { useQuery } from '@tanstack/react-query'
+import { getFarms } from '../api.js'
+
 const ICONS = {
+  trend: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+      <polyline points="16 7 22 7 22 13"/>
+    </svg>
+  ),
   home: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
@@ -40,6 +49,8 @@ const ICONS = {
 }
 
 export default function Sidebar({ views, activeView, onNavigate, settings }) {
+  const { data: farms = [] } = useQuery({ queryKey: ['farms'], queryFn: getFarms, staleTime: 300000 })
+  const farm = farms.find(f => f.farm_id === settings?.farmId)
   return (
     <nav className="sidebar" aria-label="Main navigation">
       <span className="sidebar-section-label">Views</span>
@@ -58,14 +69,14 @@ export default function Sidebar({ views, activeView, onNavigate, settings }) {
         </button>
       ))}
 
-      {settings?.farmId && (
+      {farm && (
         <div className="sidebar-foot">
           <span className="sidebar-section-label" style={{ display: 'block', marginBottom: 8 }}>Active farm</span>
           <div className="sidebar-farm-card">
-            <div className="sidebar-farm-id">{settings.farmId}</div>
+            <button className="sidebar-farm-id" onClick={() => onNavigate('dashboard')} title="Open farm dashboard">{farm.farm_id}</button>
             <div className="sidebar-farm-meta">
-              {settings.village}, {settings.taluk}<br />
-              Day {settings.cropAge} &middot; {settings.method}
+              {farm.village}, {farm.taluk}<br />
+              Day {settings.cropAge} &middot; {settings.method} &middot; {settings.soilType?.replace(/_/g, ' ')}
             </div>
           </div>
         </div>

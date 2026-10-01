@@ -16,7 +16,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.advisory import load_config, risk_level
-from src.agronomy import FarmConditions, irrigation_plan
+from src.agronomy import FarmConditions, agronomy_config, irrigation_plan, soil_properties
+from src.calibration import rootzone_moisture
 from src.coverage import AI_MODELS, WORKFLOW_STAGES
 from src.data_loader import DEFAULT_DATA_PATH, load_data
 from src.database import log_feedback, read_feedback
@@ -62,12 +63,17 @@ def scored_farms() -> pd.DataFrame:
 @st.cache_data
 def fleet_plans(crop_age: int, soil_type: str, method: str, pump_flow: float, start: date) -> pd.DataFrame:
     """Run the FAO-56 engine for every farm with shared crop and equipment settings."""
+    config = load_config()
+    _, fc, wp = soil_properties(agronomy_config(config), soil_type)
+    farms = scored_farms()
+    reference = farms["Predicted_Soil_Moisture"].tolist()
     rows = []
-    for _, farm in scored_farms().iterrows():
+    for _, farm in farms.iterrows():
         latitude = farm["Latitude"] if farm["Latitude"] == farm["Latitude"] else 12.52
+        rootzone, _ = rootzone_moisture(float(farm["Predicted_Soil_Moisture"]), reference, fc, wp, config)
         plan = irrigation_plan(
             FarmConditions(
-                soil_moisture=float(farm["Predicted_Soil_Moisture"]),
+                soil_moisture=rootzone,
                 temperature_c=float(farm["Temperature_C"]),
                 latitude=float(latitude),
                 area_ha=float(farm["Farm_Area_ha"]),
@@ -76,7 +82,8 @@ def fleet_plans(crop_age: int, soil_type: str, method: str, pump_flow: float, st
                 irrigation_method=method,
                 pump_flow_m3h=pump_flow,
                 start_date=start,
-            )
+            ),
+            config,
         )
         rec = plan["recommendation"]
         rows.append(
@@ -197,6 +204,7 @@ def farm_tab(farm: pd.Series, settings: dict, cfg: dict) -> None:
         forecast=forecast,
         start_date=settings["start"],
         language=settings["language"],
+        soil_moisture_reference=scored_farms()["Predicted_Soil_Moisture"].tolist(),
     )
     plan = result["plan"]
     rec = plan["recommendation"]

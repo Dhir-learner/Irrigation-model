@@ -147,7 +147,8 @@ def stress_category(ks: float) -> str:
     return "SEVERE"
 
 
-def _soil(cfg: dict[str, Any], soil_type: str | None) -> tuple[str, float, float]:
+def soil_properties(cfg: dict[str, Any], soil_type: str | None) -> tuple[str, float, float]:
+    """Return (soil name, field capacity, wilting point), falling back to the default soil."""
     name = soil_type if soil_type in cfg["soils"] else cfg["default_soil"]
     soil = cfg["soils"][name]
     return name, float(soil["field_capacity"]), float(soil["wilting_point"])
@@ -168,7 +169,7 @@ def irrigation_plan(conditions: FarmConditions, config: dict[str, Any] | None = 
 
     stage, kc = crop_stage(conditions.crop_age_days, cfg)
     zr = root_depth_m(conditions.crop_age_days, cfg)
-    soil_name, fc, wp = _soil(cfg, conditions.soil_type)
+    soil_name, fc, wp = soil_properties(cfg, conditions.soil_type)
     taw = 1000 * (fc - wp) * zr
 
     theta = float(conditions.soil_moisture)

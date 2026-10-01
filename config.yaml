@@ -59,6 +59,16 @@ agronomy:
     organic_carbon_g_kg: {low_below: 5.0, high_above: 7.5}
     nitrogen_adjustment: {low: 1.25, medium: 1.00, high: 0.75}
 
+# The ML/satellite soil-moisture value (0.217-0.256 m3/m3 across the dataset) is not on
+# the same scale as root-zone field capacity / wilting point. It is ranked within the
+# fleet and mapped onto the selected soil's available-water fraction (src/calibration.py).
+# Set method to "absolute" to feed the raw value into the water balance instead.
+# Probe readings are always used as measured.
+soil_moisture_calibration:
+  method: percentile_rank
+  available_fraction_at_driest: 0.30
+  available_fraction_at_wettest: 0.95
+
 # Electricity supply windows for agricultural feeders (24 h clock). Replace
 # with the ESCOM feeder timetable for each village.
 pump_scheduling:

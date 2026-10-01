@@ -18,14 +18,15 @@ COPY . .
 
 # Build React frontend
 WORKDIR /app/frontend
-RUN npm install --legacy-peer-deps
+RUN npm ci --legacy-peer-deps || npm install --legacy-peer-deps
 RUN npm run build
 
 # Go back to app root
 WORKDIR /app
 
-# Train model if not already present
-RUN python -m src.train
+# Train model only if the committed artifact is missing, so the deployed model
+# matches the reports and validation figures shipped with the repo.
+RUN test -f models/soil_moisture_pipeline.joblib || python -m src.train
 
 # Expose port 7860 for HuggingFace Spaces
 EXPOSE 7860
