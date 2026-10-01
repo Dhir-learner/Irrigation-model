@@ -1,83 +1,40 @@
 import { useQuery } from '@tanstack/react-query'
 import { getHealth } from '../api.js'
 import { useTheme } from '../context.jsx'
+import { useI18n, LANGUAGE_NAMES } from '../i18n.jsx'
+import { Icon } from './ui.jsx'
 
-const LANGS = { en: 'English', kn: '\u0C95\u0CA8\u0CCD\u0CA8\u0CA1', hi: '\u0939\u093F\u0902\u0926\u0940', mr: '\u092E\u0930\u093E\u0920\u0940' }
-
-const SunIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="5"/>
-    <line x1="12" y1="1" x2="12" y2="3"/>
-    <line x1="12" y1="21" x2="12" y2="23"/>
-    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-    <line x1="1" y1="12" x2="3" y2="12"/>
-    <line x1="21" y1="12" x2="23" y2="12"/>
-    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-  </svg>
-)
-
-const MoonIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
-  </svg>
-)
-
-export default function Topbar({ language, onLanguageChange }) {
+export default function Topbar({ title, onMenu }) {
   const { theme, toggleTheme } = useTheme()
-  const { data: health, error: healthError } = useQuery({
-    queryKey: ['health'], queryFn: getHealth, refetchInterval: 60000, retry: 0,
-  })
-  const apiState = healthError ? 'down' : !health ? 'pending' : health.model_available ? 'ok' : 'warn'
-  const apiLabel = {
-    ok: `API online${health?.model_name ? ' \u00B7 ' + health.model_name : ''}`,
-    warn: 'API online \u00B7 model missing',
-    down: 'API unreachable',
-    pending: 'Connecting\u2026',
-  }[apiState]
-
-  const today = new Date().toLocaleDateString('en-IN', {
-    weekday: 'short', day: 'numeric', month: 'short'
-  })
+  const { t, lang, setLang, fmtDate } = useI18n()
+  const { data: health, error } = useQuery({ queryKey: ['health'], queryFn: getHealth, refetchInterval: 60000, retry: 0 })
+  const state = error ? 'down' : !health ? 'pending' : health.model_available ? 'ok' : 'warn'
+  const label = { ok: t('topbar.apiOk'), warn: t('topbar.apiWarn'), down: t('topbar.apiDown'), pending: t('topbar.apiPending') }[state]
 
   return (
     <header className="topbar">
-      <div className="topbar-brand">
-        <div className="brand-logo">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2C8.5 8 5 12 5 16a7 7 0 0014 0c0-4-3.5-8-7-14z"/>
-          </svg>
-        </div>
+      <button className="icon-btn menu-btn" onClick={onMenu} aria-label={t('nav.menu')}><Icon name="menu" /></button>
+      <div className="brand">
+        <div className="brand-logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.5 8 5 12 5 16a7 7 0 0 0 14 0c0-4-3.5-8-7-14z" /></svg></div>
         <div className="brand-text">
-          <span className="brand-name">AquaAdvisory</span>
-          <span className="brand-sub">K J Somaiya &middot; KIAAR</span>
+          <span className="brand-name">{t('app.name')}</span>
+          <span className="brand-sub">{t('app.tagline')}</span>
         </div>
       </div>
-
+      <div className="topbar-title"><span className="muted">/</span><strong>{title}</strong></div>
       <div className="topbar-right">
-        <div className={`chip api-status ${apiState}`} title={healthError?.message || apiLabel}>
-          <span className="dot" aria-hidden="true" />{apiLabel}
-        </div>
-        <div className="chip hide-sm">{today}</div>
-        <div className="chip hide-sm">KJS-AGR-01</div>
-
-        <label className="lang-select">
-          <span className="visually-hidden">Advisory language</span>
-          <select value={language} onChange={e => onLanguageChange(e.target.value)}>
-            {Object.entries(LANGS).map(([code, name]) => (
-              <option key={code} value={code}>{name}</option>
-            ))}
+        <span className={`chip api-status ${state}`} title={error?.message || (health?.model_name ? `${label} · ${health.model_name}` : label)}>
+          <span className="dot" aria-hidden="true" /><span className="hide-sm">{label}</span>
+        </span>
+        <span className="chip hide-md">{fmtDate(new Date().toISOString(), { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+        <label>
+          <span className="visually-hidden">{t('topbar.language')}</span>
+          <select className="lang-select" value={lang} onChange={e => setLang(e.target.value)}>
+            {Object.entries(LANGUAGE_NAMES).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
           </select>
         </label>
-
-        <button
-          className="icon-btn"
-          onClick={toggleTheme}
-          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title="Toggle theme"
-        >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+        <button className="icon-btn" onClick={toggleTheme} aria-label={theme === 'dark' ? t('topbar.toLight') : t('topbar.toDark')} title={theme === 'dark' ? t('topbar.toLight') : t('topbar.toDark')}>
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
         </button>
       </div>
     </header>

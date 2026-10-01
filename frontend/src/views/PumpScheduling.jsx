@@ -2,46 +2,37 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { getFleet, getOptions, getFeederSchedule, downloadCSV } from '../api.js'
 import { useToast } from '../context.jsx'
-import { FeederLoadChart, fmtDate } from '../components/Charts.jsx'
+import { useI18n } from '../i18n.jsx'
+import { FeederLoadChart } from '../components/Charts.jsx'
+import { Card, Stat, PageHeader, Icon, Alert } from '../components/ui.jsx'
 import { fleetQueryParams } from './FleetMap.jsx'
 
-const BAR = '#00c896'
-
-/** SVG Gantt: one row per farm, one column per day, bars at their clock time. */
-function GanttChart({ assignments, windows, maxFarms = 40 }) {
-  if (!assignments?.length) return <div className="text-muted" style={{ padding: 24 }}>No sessions generated.</div>
-  const farms = [...new Set(assignments.map(a => a.farm_id))].slice(0, maxFarms)
+function Gantt({ assignments, windows, max = 40 }) {
+  const { t, fmtDate } = useI18n()
+  if (!assignments?.length) return <div className="empty-state">{t('schedule.noSessions')}</div>
+  const farms = [...new Set(assignments.map(a => a.farm_id))].slice(0, max)
   const dates = [...new Set(assignments.map(a => a.date))].sort()
-  const toMins = t => { const [h, m] = (t || '00:00').split(':').map(Number); return h * 60 + m }
-  const dayW = 168, rowH = 24, labelW = 96, headerH = 34
-  const width = labelW + dates.length * dayW
-  const height = headerH + farms.length * rowH + 8
-  const farmIndex = Object.fromEntries(farms.map((f, i) => [f, i]))
-  const dateIndex = Object.fromEntries(dates.map((d, i) => [d, i]))
-
+  const toMin = s => { const [h, m] = (s || '00:00').split(':').map(Number); return h * 60 + m }
+  const dayW = 168, rowH = 24, labelW = 100, headH = 34
+  const W = labelW + dates.length * dayW, H = headH + farms.length * rowH + 8
+  const fi = Object.fromEntries(farms.map((f, i) => [f, i])), di = Object.fromEntries(dates.map((d, i) => [d, i]))
   return (
     <div className="table-wrap" style={{ paddingBottom: 8 }}>
-      <svg width={width} height={height} style={{ fontFamily: 'Inter, sans-serif', display: 'block' }} role="img" aria-label="Pump session timeline">
+      <svg width={W} height={H} style={{ display: 'block', fontFamily: 'var(--font-ui)' }} role="img" aria-label={t('schedule.timeline')}>
+        <defs><linearGradient id="ganttBar" x1="0" x2="1"><stop offset="0" stopColor="#19d39b" /><stop offset="1" stopColor="#22d3ee" /></linearGradient></defs>
         {dates.map((d, i) => (
           <g key={d}>
-            {(windows || []).map((w, j) => (
-              <rect key={j} x={labelW + i * dayW + (toMins(w.start) / 1440) * dayW} y={headerH - 4}
-                width={((toMins(w.end) - toMins(w.start)) / 1440) * dayW} height={height - headerH} fill="var(--bg-hover)" />
-            ))}
-            <text x={labelW + i * dayW + dayW / 2} y={18} textAnchor="middle" fontSize={11} fill="var(--text-2)">{fmtDate(d)}</text>
-            <line x1={labelW + i * dayW} y1={headerH - 4} x2={labelW + i * dayW} y2={height} stroke="var(--border)" />
+            {(windows || []).map((w, j) => <rect key={j} x={labelW + i * dayW + (toMin(w.start) / 1440) * dayW} y={headH - 4} width={((toMin(w.end) - toMin(w.start)) / 1440) * dayW} height={H - headH} fill="var(--bg-hover)" />)}
+            <text x={labelW + i * dayW + dayW / 2} y={18} textAnchor="middle" fontSize={11} fill="var(--text-2)">{fmtDate(d, { weekday: 'short', day: 'numeric', month: 'short' })}</text>
+            <line x1={labelW + i * dayW} y1={headH - 4} x2={labelW + i * dayW} y2={H} stroke="var(--border)" />
           </g>
         ))}
-        {farms.map((f, i) => (
-          <text key={f} x={labelW - 8} y={headerH + i * rowH + rowH / 2 + 4} textAnchor="end" fontSize={10} fill="var(--text-2)">{f}</text>
-        ))}
-        {assignments.map((a, idx) => {
-          const fi = farmIndex[a.farm_id], di = dateIndex[a.date]
-          if (fi === undefined || di === undefined) return null
-          const s = toMins(a.start), e = toMins(a.end)
+        {farms.map((f, i) => <text key={f} x={labelW - 8} y={headH + i * rowH + rowH / 2 + 4} textAnchor="end" fontSize={10} fill="var(--text-2)" fontFamily="var(--font-mono)">{f}</text>)}
+        {assignments.map((a, k) => {
+          if (fi[a.farm_id] === undefined || di[a.date] === undefined) return null
+          const s = toMin(a.start), e = toMin(a.end)
           return (
-            <rect key={idx} x={labelW + di * dayW + (s / 1440) * dayW} y={headerH + fi * rowH + 4}
-              width={Math.max(3, ((e - s) / 1440) * dayW)} height={rowH - 8} rx={3} fill={BAR} fillOpacity={0.85}>
+            <rect key={k} x={labelW + di[a.date] * dayW + (s / 1440) * dayW} y={headH + fi[a.farm_id] * rowH + 4} width={Math.max(3, ((e - s) / 1440) * dayW)} height={rowH - 8} rx={4} fill="url(#ganttBar)">
               <title>{`${a.farm_id} · ${a.date} ${a.start}–${a.end} (${Number(a.hours).toFixed(1)} h)`}</title>
             </rect>
           )
@@ -53,165 +44,101 @@ function GanttChart({ assignments, windows, maxFarms = 40 }) {
 
 export default function PumpScheduling({ settings }) {
   const { toast } = useToast()
+  const { t, fmtNum } = useI18n()
   const [village, setVillage] = useState('')
   const [capacity, setCapacity] = useState('')
   const [days, setDays] = useState(14)
   const [result, setResult] = useState(null)
 
   const { data: opts } = useQuery({ queryKey: ['options'], queryFn: getOptions, staleTime: Infinity })
-  const fleetParams = fleetQueryParams(settings)
-  const { data: fleet = [], isLoading: fleetLoading, error: fleetError } = useQuery({
-    queryKey: ['fleet', fleetParams], queryFn: () => getFleet(fleetParams), staleTime: 60000,
-  })
-
+  const params = fleetQueryParams(settings)
+  const { data: fleet = [], isLoading, error } = useQuery({ queryKey: ['fleet', params], queryFn: () => getFleet(params), staleTime: 60000 })
   const villages = useMemo(() => [...new Set(fleet.map(f => f.village))].sort(), [fleet])
-  useEffect(() => {
-    if (villages.length && !villages.includes(village)) setVillage(villages[0])
-  }, [villages, village])
-  useEffect(() => {
-    if (opts && capacity === '') setCapacity(opts.max_concurrent_pumps_per_feeder)
-  }, [opts, capacity])
-  // Settings changed elsewhere: the old schedule no longer matches the fleet.
-  useEffect(() => { setResult(null) }, [fleetParams.crop_age_days, fleetParams.soil_type, fleetParams.irrigation_method, fleetParams.pump_flow_m3h])
+  useEffect(() => { if (villages.length && !villages.includes(village)) setVillage(villages[0]) }, [villages, village])
+  useEffect(() => { if (opts && capacity === '') setCapacity(opts.max_concurrent_pumps_per_feeder) }, [opts, capacity])
+  useEffect(() => { setResult(null) }, [params.crop_age_days, params.soil_type, params.irrigation_method, params.pump_flow_m3h])
 
   const windowHours = useMemo(() => (opts?.supply_windows || []).reduce((s, w) => {
-    const [a, b] = [w.start, w.end].map(t => { const [h, m] = t.split(':').map(Number); return h + m / 60 })
+    const [a, b] = [w.start, w.end].map(x => { const [h, m] = x.split(':').map(Number); return h + m / 60 })
     return s + (b - a)
   }, 0), [opts])
+  const due = useMemo(() => fleet.filter(f => f.village === village && f.due_day < days), [fleet, village, days])
+  const demand = due.reduce((s, f) => s + f.hours, 0)
+  const cap = (Number(capacity) || 0) * windowHours * days
+  const ratio = cap ? demand / cap : 0
 
-  const villageFarms = useMemo(() => fleet.filter(f => f.village === village && f.due_day < days), [fleet, village, days])
-  const demandHours = villageFarms.reduce((s, f) => s + f.hours, 0)
-  const capacityHours = (Number(capacity) || 0) * windowHours * days
-
-  const scheduleMut = useMutation({
+  const mut = useMutation({
     mutationFn: getFeederSchedule,
-    onSuccess: (data, vars) => { setResult({ ...data, farmsRequested: vars.farms.length, village }); toast('Schedule built', 'success') },
-    onError: e => toast('Schedule error: ' + e.message, 'error'),
+    onSuccess: (data, vars) => { setResult({ ...data, requested: vars.farms.length, village }); toast(t('schedule.built'), 'success') },
+    onError: e => toast(t('schedule.failed', { msg: e.message }), 'error'),
   })
-
-  const handleBuild = e => {
+  const build = e => {
     e.preventDefault()
-    if (villageFarms.length === 0) { toast('No farms fall due in this village within the horizon', 'warn'); return }
-    scheduleMut.mutate({
-      farms: villageFarms.map(f => ({ farm_id: f.farm_id, hours: Math.max(0.5, f.hours), due_day: f.due_day, stress_index: f.stress_index || 0 })),
-      start_date: new Date().toISOString().split('T')[0],
-      days,
-      max_concurrent: Number(capacity) || undefined,
+    if (!due.length) { toast(t('schedule.noFarms'), 'warn'); return }
+    mut.mutate({
+      farms: due.map(f => ({ farm_id: f.farm_id, hours: Math.max(0.5, f.hours), due_day: f.due_day, stress_index: f.stress_index || 0 })),
+      start_date: new Date().toISOString().split('T')[0], days, max_concurrent: Number(capacity) || undefined,
     })
   }
 
   return (
-    <div>
-      <div className="page-header">
-        <h1 className="page-title">Pump Scheduling</h1>
-        <p className="page-sub">Allocate pumping slots for farms sharing one electricity feeder. Earliest-due farms are served first, then the most water-stressed.</p>
-      </div>
+    <>
+      <PageHeader eyebrow={t('nav.groupFleet')} title={t('schedule.title')} subtitle={t('schedule.subtitle')} />
+      {error && <div className="mb-4"><Alert tone="error">{t('schedule.errorLoad', { msg: error.message })}</Alert></div>}
 
-      {fleetError && <div className="alert error mb-4">Could not load fleet: {fleetError.message}</div>}
-
-      <form className="filter-bar mb-4" onSubmit={handleBuild}>
-        <div className="field">
-          <label htmlFor="ps-village">Feeder (village)</label>
-          <select id="ps-village" value={village} onChange={e => { setVillage(e.target.value); setResult(null) }}>
-            {villages.map(v => <option key={v}>{v}</option>)}
-          </select>
+      <form className="panel" onSubmit={build}>
+        <div className="form-grid">
+          <div className="field"><label htmlFor="ps-v">{t('schedule.feeder')}</label>
+            <select id="ps-v" value={village} onChange={e => { setVillage(e.target.value); setResult(null) }}>{villages.map(v => <option key={v}>{v}</option>)}</select></div>
+          <div className="field"><label htmlFor="ps-c">{t('schedule.maxPumps')}</label><input id="ps-c" type="number" min="1" max="500" value={capacity} onChange={e => setCapacity(e.target.value)} /></div>
+          <div className="field"><label htmlFor="ps-d">{t('schedule.horizon')}</label><input id="ps-d" type="number" min="1" max="21" value={days} onChange={e => setDays(Math.min(21, Math.max(1, parseInt(e.target.value) || 1)))} /></div>
+          <div className="field span-2"><span className="field-label">{t('schedule.windows', { h: windowHours })}</span>
+            <div className="row">{opts?.supply_windows?.map(w => <span key={w.start} className="chip"><Icon name="bolt" size={12} />{w.start}–{w.end}</span>)}</div></div>
+          <button className="btn primary" type="submit" disabled={mut.isPending || !village || isLoading}><Icon name="pump" />{mut.isPending ? t('schedule.building') : t('schedule.build')}</button>
         </div>
-        <div className="field">
-          <label htmlFor="ps-cap">Max pumps at once</label>
-          <input id="ps-cap" type="number" value={capacity} min="1" max="500" onChange={e => setCapacity(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="ps-days">Horizon (days)</label>
-          <input id="ps-days" type="number" value={days} min="1" max="21" onChange={e => setDays(Math.min(21, Math.max(1, parseInt(e.target.value) || 1)))} />
-        </div>
-        <div className="field wide">
-          <span className="field-label">Supply windows ({windowHours} h/day)</span>
-          <div className="readonly-value">{opts?.supply_windows?.map(w => `${w.start}–${w.end}`).join(' · ') || '—'}</div>
-        </div>
-        <button className="btn primary" type="submit" disabled={scheduleMut.isPending || !village || fleetLoading}>
-          {scheduleMut.isPending ? 'Building…' : 'Build schedule'}
-        </button>
       </form>
 
       <div className="stat-grid mb-5">
-        <div className="stat-tile"><div className="stat-label">Farms due in horizon</div><div className="stat-value">{fleetLoading ? '…' : villageFarms.length}</div></div>
-        <div className="stat-tile"><div className="stat-label">Pump-hours demanded</div><div className="stat-value">{Math.round(demandHours).toLocaleString('en-IN')}</div></div>
-        <div className="stat-tile"><div className="stat-label">Feeder capacity</div><div className="stat-value">{Math.round(capacityHours).toLocaleString('en-IN')} h</div><div className="stat-delta">{capacity || '—'} pumps &times; {windowHours} h &times; {days} d</div></div>
-        <div className="stat-tile">
-          <div className="stat-label">Demand / capacity</div>
-          <div className={'stat-value' + (demandHours > capacityHours ? ' tone-danger' : '')}>{capacityHours ? ((100 * demandHours) / capacityHours).toFixed(0) + '%' : '—'}</div>
-          <div className="stat-delta">{demandHours > capacityHours ? 'over capacity: some farms will wait' : 'fits, before due-date constraints'}</div>
-        </div>
+        <Stat label={t('schedule.dueInHorizon')} icon="layers" value={isLoading ? '…' : fmtNum(due.length)} />
+        <Stat label={t('schedule.demanded')} icon="clock" tone="accent-2" value={fmtNum(demand)} />
+        <Stat label={t('schedule.capacity')} icon="bolt" tone="water" value={`${fmtNum(cap)} h`} delta={t('schedule.capacityCalc', { p: capacity || '—', h: windowHours, d: days })} />
+        <Stat label={t('schedule.ratio')} icon="alert" tone={ratio > 1 ? 'status-now' : 'status-ok'} value={cap ? `${fmtNum(ratio * 100)}%` : '—'} valueTone={ratio > 1 ? 'danger' : undefined}
+          delta={ratio > 1 ? t('schedule.over') : t('schedule.fits')}>
+          <div className="mix-bar mt-2" style={{ width: '100%' }}><span style={{ flex: Math.min(1, ratio), background: ratio > 1 ? 'var(--status-now)' : 'var(--accent)' }} /><span style={{ flex: Math.max(0, 1 - ratio) }} /></div>
+        </Stat>
       </div>
 
       {result && (
-        <>
-          <div className="stat-grid mb-5">
-            <div className="stat-tile"><div className="stat-label">Fully scheduled</div><div className="stat-value tone-ok">{result.farmsRequested - (result.unscheduled?.length || 0)} / {result.farmsRequested}</div></div>
-            <div className="stat-tile"><div className="stat-label">Unmet pump-hours</div><div className={'stat-value' + (result.unmet_hours > 0 ? ' tone-warn' : '')}>{result.unmet_hours?.toFixed(0)} / {result.demand_hours?.toFixed(0)}</div></div>
-            <div className="stat-tile"><div className="stat-label">Peak concurrent pumps</div><div className="stat-value">{result.peak_concurrent_pumps ?? '—'}</div><div className="stat-delta">limit {result.capacity_per_slot}</div></div>
-            <div className="stat-tile"><div className="stat-label">Feeder utilisation</div><div className="stat-value">{result.feeder_utilisation != null ? (result.feeder_utilisation * 100).toFixed(0) + '%' : '—'}</div></div>
+        <div className="stack">
+          <div className="stat-grid">
+            <Stat label={t('schedule.fully')} icon="check" tone="status-ok" value={`${result.requested - (result.unscheduled?.length || 0)} / ${result.requested}`} />
+            <Stat label={t('schedule.unmet')} icon="alert" tone={result.unmet_hours > 0 ? 'status-soon' : 'status-ok'} value={`${fmtNum(result.unmet_hours)} / ${fmtNum(result.demand_hours)}`} />
+            <Stat label={t('schedule.peak')} icon="pump" value={result.peak_concurrent_pumps} delta={t('schedule.limit', { n: result.capacity_per_slot })} />
+            <Stat label={t('schedule.util')} icon="bolt" tone="water" value={`${fmtNum(result.feeder_utilisation * 100)}%`} />
           </div>
-
-          <div className="alert info mb-4">{result.method_note}</div>
-
-          <div className="card mb-4">
-            <div className="card-header"><span className="card-title">Feeder load</span><span className="text-muted text-sm">pumps running per 30-minute slot</span></div>
-            <div className="card-body"><FeederLoadChart assignments={result.assignments} capacity={result.capacity_per_slot} /></div>
-          </div>
-
-          <div className="card mb-4">
-            <div className="card-header">
-              <span className="card-title">Pump session timeline</span>
-              <span className="text-muted text-sm">first 40 farms &middot; shaded = supply windows &middot; hover a bar</span>
-            </div>
-            <div className="card-body" style={{ padding: '8px 0 0 0' }}>
-              <GanttChart assignments={result.assignments} windows={opts?.supply_windows} />
-            </div>
-          </div>
-
+          <Alert tone="info">{t('schedule.method')}</Alert>
+          <Card title={t('schedule.load')} icon="bolt" tag={t('schedule.loadHint')}><FeederLoadChart assignments={result.assignments} capacity={result.capacity_per_slot} /></Card>
+          <Card title={t('schedule.timeline')} icon="calendar" tag={t('schedule.timelineHint')} flush><Gantt assignments={result.assignments} windows={opts?.supply_windows} /></Card>
           {result.unscheduled?.length > 0 && (
-            <div className="card mb-4">
-              <div className="card-header">
-                <span className="card-title">Farms that cannot finish in the horizon</span>
-                <span className="card-tag danger">{result.unscheduled.length}</span>
-              </div>
-              <div className="card-body" style={{ padding: 0 }}>
-                <p className="card-foot text-sm">Raise feeder capacity, extend the horizon, or move these farms to drip (90% efficiency) to cut their pump-hours.</p>
-                <div className="table-wrap" style={{ maxHeight: 280 }}>
-                  <table className="data-table">
-                    <thead><tr><th>Farm</th><th className="num">Needed h</th><th className="num">Scheduled h</th><th className="num">Unmet h</th></tr></thead>
-                    <tbody>
-                      {result.unscheduled.map(u => (
-                        <tr key={u.farm_id}><td className="font-bold">{u.farm_id}</td><td className="num">{u.hours.toFixed(1)}</td><td className="num">{u.hours_scheduled.toFixed(1)}</td><td className="num">{u.hours_unmet.toFixed(1)}</td></tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">All sessions</span>
-              <button className="btn sm" onClick={() => downloadCSV(result.assignments, `pump_schedule_${result.village}.csv`)}>Export CSV</button>
-            </div>
-            <div className="card-body" style={{ padding: 0 }}>
-              <div className="table-wrap" style={{ maxHeight: 420 }}>
+            <Card title={t('schedule.cannot')} icon="alert" tag={String(result.unscheduled.length)} tagTone="danger" flush foot={t('schedule.cannotHint')}>
+              <div className="table-wrap" style={{ maxHeight: 300 }}>
                 <table className="data-table">
-                  <thead><tr><th>Farm</th><th>Date</th><th>Start</th><th>End</th><th className="num">Hours</th></tr></thead>
-                  <tbody>
-                    {result.assignments.map((a, i) => (
-                      <tr key={i}><td className="font-bold">{a.farm_id}</td><td>{a.date}</td><td>{a.start}</td><td>{a.end}</td><td className="num">{Number(a.hours).toFixed(1)}</td></tr>
-                    ))}
-                  </tbody>
+                  <thead><tr><th>{t('common.farm')}</th><th className="num">{t('schedule.needed')}</th><th className="num">{t('schedule.scheduled')}</th><th className="num">{t('schedule.unmetH')}</th></tr></thead>
+                  <tbody>{result.unscheduled.map(u => <tr key={u.farm_id}><td className="mono">{u.farm_id}</td><td className="num">{fmtNum(u.hours, 1)}</td><td className="num">{fmtNum(u.hours_scheduled, 1)}</td><td className="num tone-danger">{fmtNum(u.hours_unmet, 1)}</td></tr>)}</tbody>
                 </table>
               </div>
+            </Card>
+          )}
+          <Card title={t('schedule.all')} icon="clipboard" flush actions={<button className="btn sm" onClick={() => downloadCSV(result.assignments, `pump_schedule_${result.village}.csv`)}><Icon name="download" size={13} />{t('common.exportCsv')}</button>}>
+            <div className="table-wrap" style={{ maxHeight: 400 }}>
+              <table className="data-table">
+                <thead><tr><th>{t('common.farm')}</th><th>{t('common.date')}</th><th>{t('common.start')}</th><th>{t('common.end')}</th><th className="num">h</th></tr></thead>
+                <tbody>{result.assignments.map((a, i) => <tr key={i}><td className="mono">{a.farm_id}</td><td>{a.date}</td><td>{a.start}</td><td>{a.end}</td><td className="num">{fmtNum(a.hours, 1)}</td></tr>)}</tbody>
+              </table>
             </div>
-          </div>
-        </>
+          </Card>
+        </div>
       )}
-    </div>
+    </>
   )
 }

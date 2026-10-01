@@ -1,17 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#06100d" />
     <title>AquaAdvisory — Sugarcane Irrigation Intelligence</title>
-    <meta name="description" content="AI-assisted, plot-level irrigation advisory for sugarcane. FAO-56 engine, soil-moisture ML model, multilingual output.">
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C11 11 7 15.5 7 20a9 9 0 0 0 18 0c0-4.5-4-9-9-17z' fill='%2338bdf8'/%3E%3C/svg%3E">
+    <meta name="description" content="AI-assisted, plot-level irrigation advisory for sugarcane: FAO-56 engine, satellite map, 3D views, in English, Kannada, Hindi and Marathi.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2319d39b'/%3E%3Cpath d='M16 6C12 12 9 15.5 9 19a7 7 0 0 0 14 0c0-3.5-3-7-7-13z' fill='%2303140e'/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Noto+Sans+Kannada:wght@400;600&family=Noto+Sans+Devanagari:wght@400;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script type="module" crossorigin src="/app/assets/index-BtLmymEu.js"></script>
-    <link rel="stylesheet" crossorigin href="/app/assets/index-DAkWq2lJ.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700&family=JetBrains+Mono:wght@500;600&family=Noto+Sans+Kannada:wght@400;500;700&family=Noto+Sans+Devanagari:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+      try { var t = localStorage.getItem('theme'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+      try { var l = localStorage.getItem('aqua.lang'); if (l) document.documentElement.lang = l; } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/app/assets/index-DtPRmqzv.js"></script>
+    <link rel="stylesheet" crossorigin href="/app/assets/index-B59RGRAY.css">
   </head>
   <body>
     <div id="root"></div>

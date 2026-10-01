@@ -1,52 +1,56 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { lazy, Suspense, useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getOptions, getFarms, getFarm, getFarmPlan, getFarmsGeoJSON, getFleet, postFeedback, postFarmWhatIf } from '../api.js'
+import {
+  getOptions, getFarms, getFarm, getFarmPlan, getFarmsGeoJSON, getFleet, getFleetAnalytics, postFeedback, postFarmWhatIf,
+} from '../api.js'
 import { useToast, useTheme } from '../context.jsx'
+import { useI18n } from '../i18n.jsx'
 import SoilGauge from '../components/SoilGauge.jsx'
 import FarmMap from '../components/FarmMap.jsx'
-import { WaterBalanceChart, YieldLossChart, ContributionChart, KcCurveChart, fmtDate } from '../components/Charts.jsx'
+import { WaterBalanceChart, YieldLossChart, ContributionChart, KcCurveChart } from '../components/Charts.jsx'
+import { Card, Stat, Icon, PageHeader, StatusBadge, Tabs, Alert, Skeleton, Sparkline, STATUS_VAR } from '../components/ui.jsx'
+import { fleetQueryParams } from './FleetMap.jsx'
 
-export const STATUS = {
-  IRRIGATE_NOW:  { label: 'Irrigate now',           cls: 'irrigate-now',  icon: '●' },
-  IRRIGATE_SOON: { label: 'Irrigate within 3 days', cls: 'irrigate-soon', icon: '▲' },
-  NOT_REQUIRED:  { label: 'Not required yet',       cls: 'not-required',  icon: '✓' },
-}
+const SoilProfile3D = lazy(() => import('../three/SoilProfile3D.jsx'))
+
 const SPEECH_LANG = { en: 'en-IN', kn: 'kn-IN', hi: 'hi-IN', mr: 'mr-IN' }
-const WHATIF_FEATURES = [
-  { key: 'Rainfall_mm', label: 'Seasonal rainfall', unit: 'mm', step: 1 },
-  { key: 'Temperature_C', label: 'Mean temperature', unit: '°C', step: 0.1 },
-  { key: 'Relative_Humidity', label: 'Relative humidity', unit: '%', step: 0.5 },
-  { key: 'NDVI', label: 'NDVI', unit: '', step: 0.01 },
-  { key: 'LAI', label: 'LAI', unit: '', step: 0.01 },
+const WHATIF = [
+  { key: 'Rainfall_mm', step: 1, d: 0, unit: 'mm' },
+  { key: 'Temperature_C', step: 0.1, d: 1, unit: '°C' },
+  { key: 'Relative_Humidity', step: 0.5, d: 1, unit: '%' },
+  { key: 'NDVI', step: 0.01, d: 2, unit: '' },
+  { key: 'LAI', step: 0.01, d: 2, unit: '' },
 ]
-const TABS = [
-  { id: 'advisory', label: 'Advisory' },
-  { id: 'water', label: 'Water balance' },
-  { id: 'model', label: 'Model & what-if' },
-  { id: 'review', label: 'Review' },
-]
-
-const fmt = (v, d = 1, suffix = '') => (v === null || v === undefined || Number.isNaN(Number(v)) ? '—' : Number(v).toFixed(d) + suffix)
-const fmtInt = v => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }))
-
-function StatTile({ label, value, delta, tone }) {
-  return (
-    <div className="stat-tile">
-      <div className="stat-label">{label}</div>
-      <div className={'stat-value' + (tone ? ' tone-' + tone : '')}>{value ?? '—'}</div>
-      {delta && <div className="stat-delta">{delta}</div>}
-    </div>
-  )
-}
+const PROFILE = ['NDVI', 'LAI', 'Soil_pH', 'Organic_Carbon', 'Temperature_C', 'Relative_Humidity', 'Rainfall_mm']
+const STAGES = ['initial', 'development', 'mid', 'late']
 
 function parseRain(text) {
   if (!text.trim()) return []
   return text.split(/[,\s]+/).filter(Boolean).map(Number).filter(n => Number.isFinite(n) && n >= 0).slice(0, 14)
 }
 
-export default function FarmDashboard({ language, settings, onSettingsChange }) {
+function BulletRow({ name, value, s, digits }) {
+  const { fmtNum } = useI18n()
+  if (!s || value == null) return null
+  const span = s.max - s.min || 1
+  const pos = v => `${Math.min(100, Math.max(0, ((v - s.min) / span) * 100))}%`
+  return (
+    <div className="bullet">
+      <span className="name">{name}</span>
+      <div className="track" title={`min ${s.min} · P25 ${s.p25} · median ${s.median} · P75 ${s.p75} · max ${s.max}`}>
+        <span className="iqr" style={{ left: pos(s.p25), width: `calc(${pos(s.p75)} - ${pos(s.p25)})` }} />
+        <span className="med" style={{ left: pos(s.median) }} />
+        <span className="mark" style={{ left: pos(value) }} />
+      </div>
+      <span className="val">{fmtNum(value, digits)}</span>
+    </div>
+  )
+}
+
+export default function FarmDashboard({ settings, onSettingsChange }) {
   const { toast } = useToast()
   const { theme } = useTheme()
+  const { t, lang, fmtNum, fmtDate } = useI18n()
   const queryClient = useQueryClient()
   const today = new Date().toISOString().split('T')[0]
   const { farmId, plantingDate, soilType, method, pumpFlow, cropAge } = settings
@@ -57,7 +61,7 @@ export default function FarmDashboard({ language, settings, onSettingsChange }) 
   const [sensor, setSensor] = useState('')
   const [rainText, setRainText] = useState('')
   const [useLive, setUseLive] = useState(false)
-  const [activeTab, setActiveTab] = useState('advisory')
+  const [tab, setTab] = useState('advisory')
   const [wiValues, setWiValues] = useState({})
   const [wiResult, setWiResult] = useState(null)
   const [speaking, setSpeaking] = useState(false)
@@ -73,30 +77,22 @@ export default function FarmDashboard({ language, settings, onSettingsChange }) 
     const q = search.trim().toLowerCase()
     return q ? list.filter(f => f.farm_id.toLowerCase().includes(q)) : list
   }, [byTaluk, village, search])
-
   const currentFarm = farms.find(f => f.farm_id === farmId)
 
-  // Keep the selected farm valid: when filters exclude it (or nothing is selected yet),
-  // pick the first matching farm instead of leaving an empty ID that would 404.
+  // Keep the selection valid so the plan request never goes out with an empty farm ID.
   useEffect(() => {
-    if (farms.length === 0 || filteredFarms.length === 0) return
-    if (!filteredFarms.some(f => f.farm_id === farmId)) onSettingsChange({ farmId: filteredFarms[0].farm_id })
+    if (farms.length && filteredFarms.length && !filteredFarms.some(f => f.farm_id === farmId)) onSettingsChange({ farmId: filteredFarms[0].farm_id })
   }, [farms, filteredFarms, farmId, onSettingsChange])
-
-  // A farm opened from another view (map, analytics) should be visible in the filters.
   useEffect(() => {
     if (!currentFarm) return
     if (taluk !== 'All' && currentFarm.taluk !== taluk) { setTaluk('All'); setVillage('All') }
     else if (village !== 'All' && currentFarm.village !== village) setVillage('All')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [farmId])
-
+  }, [farmId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setWiValues({}); setWiResult(null) }, [farmId])
 
   const rainForecast = useMemo(() => parseRain(rainText), [rainText])
   const sensorValue = sensor === '' ? null : Number(sensor)
   const sensorValid = sensorValue === null || (sensorValue >= 0 && sensorValue <= 0.6)
-
   const planBody = useMemo(() => ({
     crop_age_days: Math.min(cropAge, 500),
     sensor_soil_moisture: sensorValid ? sensorValue : null,
@@ -105,51 +101,41 @@ export default function FarmDashboard({ language, settings, onSettingsChange }) 
     pump_flow_m3h: Number(pumpFlow) > 0 ? Number(pumpFlow) : undefined,
     forecast_rain_mm: rainForecast,
     use_live_weather: useLive,
-    language,
-  }), [cropAge, sensorValue, sensorValid, soilType, method, pumpFlow, rainForecast, useLive, language])
+    language: lang,
+  }), [cropAge, sensorValue, sensorValid, soilType, method, pumpFlow, rainForecast, useLive, lang])
 
   const planEnabled = Boolean(currentFarm)
-  const { data: plan, isFetching: planLoading, error: planError, refetch: refetchPlan } = useQuery({
-    queryKey: ['plan', farmId, planBody],
-    queryFn: () => getFarmPlan(farmId, planBody),
-    enabled: planEnabled,
-    placeholderData: prev => prev,
-    staleTime: 30000,
+  const { data: plan, isFetching: planLoading, error: planError, refetch } = useQuery({
+    queryKey: ['plan', farmId, planBody], queryFn: () => getFarmPlan(farmId, planBody), enabled: planEnabled, placeholderData: p => p, staleTime: 30000,
   })
-
-  const geoParams = useMemo(() => {
-    const p = {}
-    if (taluk !== 'All') p.taluk = taluk
-    if (village !== 'All') p.village = village
-    return p
-  }, [taluk, village])
+  const geoParams = useMemo(() => (village !== 'All' ? { village } : taluk !== 'All' ? { taluk } : currentFarm ? { village: currentFarm.village } : {}), [taluk, village, currentFarm])
   const { data: geojson } = useQuery({ queryKey: ['geojson', geoParams], queryFn: () => getFarmsGeoJSON(geoParams), staleTime: 300000 })
-
-  const fleetParams = { crop_age_days: Math.min(cropAge, 500), soil_type: soilType, irrigation_method: method, pump_flow_m3h: pumpFlow || undefined }
+  const fleetParams = fleetQueryParams(settings)
   const { data: fleet } = useQuery({ queryKey: ['fleet', fleetParams], queryFn: () => getFleet(fleetParams), enabled: Boolean(soilType && method), staleTime: 60000 })
-
+  const { data: analytics } = useQuery({ queryKey: ['analytics', fleetParams], queryFn: () => getFleetAnalytics(fleetParams), enabled: tab === 'crop', staleTime: 60000 })
   const { data: farmDetail } = useQuery({ queryKey: ['farmDetail', farmId], queryFn: () => getFarm(farmId), enabled: planEnabled, staleTime: 300000 })
 
   const feedbackMut = useMutation({
     mutationFn: postFeedback,
-    onSuccess: () => { toast('Decision recorded', 'success'); queryClient.invalidateQueries({ queryKey: ['feedback'] }) },
-    onError: e => toast('Could not record decision: ' + e.message, 'error'),
+    onSuccess: () => { toast(t('dash.recorded'), 'success'); queryClient.invalidateQueries({ queryKey: ['feedback'] }) },
+    onError: e => toast(t('dash.recordFailed', { msg: e.message }), 'error'),
   })
   const whatIfMut = useMutation({
     mutationFn: changes => postFarmWhatIf(farmId, { ...planBody, sensor_soil_moisture: null, use_live_weather: false, changes }),
     onSuccess: setWiResult,
-    onError: e => toast('What-if failed: ' + e.message, 'error'),
+    onError: e => toast(t('dash.whatIfFailed', { msg: e.message }), 'error'),
   })
 
-  const planData = plan?.plan
-  const rec = planData?.recommendation
-  const statusInfo = rec ? (STATUS[rec.status] || STATUS.NOT_REQUIRED) : null
-  const soilWater = planData?.soil_water
-  const availablePct = soilWater ? 100 * (1 - soilWater.depletion_ratio) : null
-  const triggerPct = soilWater ? 100 * (1 - soilWater.depletion_fraction_p) : null
-  const soonPct = soilWater && planData ? 100 * (1 - Math.max(0, soilWater.raw_mm - 3 * planData.water_requirement.etc_mm_day) / soilWater.taw_mm) : null
-  const calibration = plan?.soil_moisture_calibration
-  const farmFields = farmDetail?.farm
+  const P = plan?.plan
+  const rec = P?.recommendation
+  const sw = P?.soil_water
+  const availablePct = sw ? 100 * (1 - sw.depletion_ratio) : null
+  const triggerPct = sw ? 100 * (1 - sw.depletion_fraction_p) : null
+  const soonPct = sw && P ? 100 * (1 - Math.max(0, sw.raw_mm - 3 * P.water_requirement.etc_mm_day) / sw.taw_mm) : null
+  const calib = plan?.soil_moisture_calibration
+  const ff = farmDetail?.farm
+  const forecast = plan?.weather?.forecast
+  const stage = P?.crop?.stage
 
   const stepFarm = useCallback(dir => {
     const i = filteredFarms.findIndex(f => f.farm_id === farmId)
@@ -157,509 +143,406 @@ export default function FarmDashboard({ language, settings, onSettingsChange }) 
     if (next) onSettingsChange({ farmId: next.farm_id })
   }, [filteredFarms, farmId, onSettingsChange])
 
+  const events = useMemo(() => {
+    if (!rec || !plan) return []
+    const tone = `var(--${STATUS_VAR[rec.status]})`
+    const list = [{ date: rec.next_irrigation_date, title: t('dash.evIrrigate', { h: fmtNum(rec.duration_hours, 1), m: fmtNum(rec.volume_m3) }), sub: t('status.' + rec.status), tone }]
+    ;(plan.pump_sessions || []).slice(0, 3).forEach(s => list.push({ date: s.date, title: `${t('map.pump')} ${s.start}–${s.end}`, sub: `${fmtNum(s.hours, 1)} h`, tone: 'var(--water)' }))
+    if (plan.fertigation) list.push({ date: plan.fertigation.next_fertigation_date, title: t('dash.evFert'), sub: Object.entries(plan.fertigation.products_per_application_kg_acre).map(([k, v]) => `${k} ${fmtNum(v, 1)}`).join(' · ') + ' kg/acre', tone: 'var(--accent)' })
+    const d = new Date(rec.next_irrigation_date); d.setDate(d.getDate() + 1)
+    const loss7 = plan.yield_loss_if_delayed?.find(y => y.delay_days === 7)
+    list.push({ date: d.toISOString().slice(0, 10), title: t('dash.evStress'), sub: loss7 ? `${t('chart.delayLabel', { n: 7 })}: −${fmtNum(loss7.relative_yield_loss_pct, 1)}%` : '', tone: 'var(--status-now)' })
+    return list.sort((a, b) => a.date.localeCompare(b.date))
+  }, [rec, plan, t, fmtNum])
+
   const handleFeedback = e => {
     e.preventDefault()
     const fd = new FormData(e.target)
     const decision = fd.get('decision')
-    const overrideHours = fd.get('hours') === '' ? undefined : Number(fd.get('hours'))
     feedbackMut.mutate({
-      farm_id: farmId,
-      reviewer_role: fd.get('role'),
-      decision,
-      recommended_date: rec?.next_irrigation_date,
-      recommended_hours: rec?.duration_hours,
+      farm_id: farmId, reviewer_role: fd.get('role'), decision,
+      recommended_date: rec?.next_irrigation_date, recommended_hours: rec?.duration_hours,
       override_date: decision === 'modified' ? (fd.get('date') || undefined) : undefined,
-      override_hours: decision === 'modified' ? overrideHours : undefined,
-      comment: fd.get('comment') || undefined,
-      soil_moisture_source: plan?.soil_moisture_source,
+      override_hours: decision === 'modified' && fd.get('hours') !== '' ? Number(fd.get('hours')) : undefined,
+      comment: fd.get('comment') || undefined, soil_moisture_source: plan?.soil_moisture_source,
     })
     e.target.reset()
   }
-
-  const handleWhatIf = () => {
+  const runWhatIf = () => {
     const changes = Object.fromEntries(Object.entries(wiValues).filter(([, v]) => v !== undefined))
-    if (Object.keys(changes).length === 0) { toast('Move at least one slider first', 'warn'); return }
+    if (!Object.keys(changes).length) { toast(t('dash.moveSlider'), 'warn'); return }
     whatIfMut.mutate(changes)
   }
-
   const copyAdvisory = async () => {
-    try { await navigator.clipboard.writeText(plan.advisory_text); toast('Advisory copied', 'success') }
-    catch { toast('Clipboard not available in this browser', 'warn') }
+    try { await navigator.clipboard.writeText(plan.advisory_text); toast(t('dash.copiedOk'), 'success') } catch { toast(t('dash.noClipboard'), 'warn') }
   }
-  const speakAdvisory = () => {
-    if (!('speechSynthesis' in window)) { toast('Text-to-speech is not supported in this browser', 'warn'); return }
+  const speak = () => {
+    if (!('speechSynthesis' in window)) { toast(t('dash.noSpeech'), 'warn'); return }
     if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return }
     const u = new SpeechSynthesisUtterance(plan.advisory_text)
-    u.lang = SPEECH_LANG[language] || 'en-IN'
+    u.lang = SPEECH_LANG[lang] || 'en-IN'
     u.rate = 0.95
     u.onend = u.onerror = () => setSpeaking(false)
     window.speechSynthesis.speak(u)
     setSpeaking(true)
   }
   useEffect(() => () => window.speechSynthesis?.cancel(), [])
-  const whatsappLink = plan ? `https://wa.me/?text=${encodeURIComponent(`${farmId}: ${plan.advisory_text}`)}` : '#'
-
-  const handleExportPDF = async () => {
+  const exportPdf = async () => {
     try {
       const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([import('jspdf'), import('html2canvas')])
       const el = document.getElementById('advisory-panel')
-      const bg = getComputedStyle(document.body).backgroundColor || (theme === 'dark' ? '#080b12' : '#ffffff')
-      const canvas = await html2canvas(el, { scale: 1.5, backgroundColor: bg, useCORS: true })
+      const canvas = await html2canvas(el, { scale: 1.5, backgroundColor: theme === 'dark' ? '#06100d' : '#f3f6f1', useCORS: true })
       const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? 'landscape' : 'portrait', unit: 'px', format: [canvas.width, canvas.height] })
       pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height)
       pdf.save(`advisory_${farmId}_${today}.pdf`)
-      toast('PDF exported', 'success')
-    } catch (e) {
-      toast('PDF export failed: ' + e.message, 'error')
-    }
+      toast(t('dash.pdfOk'), 'success')
+    } catch (e) { toast(t('dash.pdfFail', { msg: e.message }), 'error') }
   }
 
-  if (farmsError) {
-    return (
-      <div>
-        <div className="page-header"><h1 className="page-title">Farm Advisory</h1></div>
-        <div className="alert error">Could not load farms: {farmsError.message}</div>
-      </div>
-    )
-  }
+  if (farmsError) return <><PageHeader title={t('dash.title')} /><Alert tone="error">{t('dash.farmsError', { msg: farmsError.message })}</Alert></>
+
+  const stageDays = opts?.stage_days
+  const seasonEnd = stageDays ? STAGES.reduce((s, k) => s + stageDays[k], 0) : 405
 
   return (
     <div id="advisory-panel">
-      <div className="page-header flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="page-title">Farm Advisory</h1>
-          <p className="page-sub">FAO-56 irrigation engine &middot; KJS-AGR-01 prototype</p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <button className="btn" onClick={() => stepFarm(-1)} disabled={filteredFarms.length < 2} title="Previous farm">&larr; Prev</button>
-          <button className="btn" onClick={() => stepFarm(1)} disabled={filteredFarms.length < 2} title="Next farm">Next &rarr;</button>
-          <button className="btn" onClick={handleExportPDF} disabled={!plan}>Export PDF</button>
-        </div>
-      </div>
+      <PageHeader eyebrow={t('nav.groupFarm')} title={t('dash.title')} subtitle={t('dash.subtitle')} actions={<>
+        <button className="btn" onClick={() => stepFarm(-1)} disabled={filteredFarms.length < 2}><Icon name="arrowL" />{t('common.prev')}</button>
+        <button className="btn" onClick={() => stepFarm(1)} disabled={filteredFarms.length < 2}>{t('common.next')}<Icon name="arrowR" /></button>
+        <button className="btn" onClick={exportPdf} disabled={!plan}><Icon name="download" />{t('common.exportPdf')}</button>
+      </>} />
 
-      <section className="filter-bar" aria-label="Farm and crop settings">
-        <div className="field">
-          <label htmlFor="f-taluk">Taluk</label>
-          <select id="f-taluk" value={taluk} onChange={e => { setTaluk(e.target.value); setVillage('All') }}>
-            {taluks.map(t => <option key={t}>{t}</option>)}
-          </select>
+      <section className="panel" aria-label={t('dash.settings')}>
+        <div className="panel-title"><span><Icon name="sliders" size={13} style={{ verticalAlign: '-2px', marginRight: 6 }} />{t('dash.settings')}</span>
+          <button className="btn sm primary" onClick={() => planEnabled && refetch()} disabled={!planEnabled || planLoading}><Icon name="refresh" size={13} />{planLoading ? t('common.refreshing') : t('common.refresh')}</button>
         </div>
-        <div className="field">
-          <label htmlFor="f-village">Village</label>
-          <select id="f-village" value={village} onChange={e => setVillage(e.target.value)}>
-            {villages.map(v => <option key={v}>{v}</option>)}
-          </select>
+        <div className="form-grid">
+          <div className="field"><label htmlFor="f-taluk">{t('common.taluk')}</label>
+            <select id="f-taluk" value={taluk} onChange={e => { setTaluk(e.target.value); setVillage('All') }}>
+              {taluks.map(x => <option key={x} value={x}>{x === 'All' ? t('common.all') : x}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="f-village">{t('common.village')}</label>
+            <select id="f-village" value={village} onChange={e => setVillage(e.target.value)}>
+              {villages.map(x => <option key={x} value={x}>{x === 'All' ? t('common.all') : x}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="f-search">{t('dash.searchId')}</label>
+            <input id="f-search" type="search" value={search} placeholder="0110" onChange={e => setSearch(e.target.value)} /></div>
+          <div className="field"><label htmlFor="f-farm">{t('dash.farmCount', { n: filteredFarms.length })}</label>
+            <select id="f-farm" value={currentFarm ? farmId : ''} onChange={e => onSettingsChange({ farmId: e.target.value })} disabled={farmsLoading}>
+              {farmsLoading && <option value="">{t('common.loading')}</option>}
+              {!farmsLoading && !filteredFarms.length && <option value="">{t('dash.noMatch')}</option>}
+              {filteredFarms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.farm_id}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="f-plant">{t('dash.plantingDate')} · {t('dash.cropDay', { n: cropAge })}</label>
+            <input id="f-plant" type="date" value={plantingDate} max={today} onChange={e => onSettingsChange({ plantingDate: e.target.value })} /></div>
+          <div className="field"><label htmlFor="f-soil">{t('dash.soilTexture')}</label>
+            <select id="f-soil" value={soilType} onChange={e => onSettingsChange({ soilType: e.target.value })}>
+              {opts?.soils?.map(s => <option key={s} value={s}>{t('soil.' + s)}</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="f-method">{t('dash.irrigationMethod')}</label>
+            <select id="f-method" value={method} onChange={e => onSettingsChange({ method: e.target.value })}>
+              {opts?.methods && Object.entries(opts.methods).map(([m, eff]) => <option key={m} value={m}>{t('method.' + m)} ({Math.round(eff * 100)}%)</option>)}
+            </select></div>
+          <div className="field"><label htmlFor="f-pump">{t('dash.pump')}</label>
+            <input id="f-pump" type="number" value={pumpFlow} min="1" max="200" step="0.5" onChange={e => onSettingsChange({ pumpFlow: e.target.value })} /></div>
+          <div className="field"><label htmlFor="f-probe">{t('dash.probe')}</label>
+            <input id="f-probe" type="number" value={sensor} min="0" max="0.6" step="0.005" placeholder={t('common.optional')} className={sensorValid ? '' : 'invalid'} aria-invalid={!sensorValid} onChange={e => setSensor(e.target.value)} /></div>
+          <div className="field span-2"><label htmlFor="f-rain">{t('dash.rainForecast')}</label>
+            <input id="f-rain" type="text" value={rainText} placeholder={t('dash.rainPlaceholder')} onChange={e => setRainText(e.target.value)} /></div>
+          <label className="switch"><input type="checkbox" checked={useLive} onChange={e => setUseLive(e.target.checked)} />{t('dash.liveWeather')}</label>
         </div>
-        <div className="field">
-          <label htmlFor="f-search">Search ID</label>
-          <input id="f-search" type="search" value={search} placeholder="e.g. 0110" onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="f-farm">Farm ({filteredFarms.length})</label>
-          <select id="f-farm" value={currentFarm ? farmId : ''} onChange={e => onSettingsChange({ farmId: e.target.value })} disabled={farmsLoading}>
-            {farmsLoading && <option value="">Loading…</option>}
-            {!farmsLoading && filteredFarms.length === 0 && <option value="">No match</option>}
-            {filteredFarms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.farm_id}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="f-plant">Planting date &middot; day {cropAge}</label>
-          <input id="f-plant" type="date" value={plantingDate} max={today} onChange={e => onSettingsChange({ plantingDate: e.target.value })} />
-        </div>
-        {opts && (
-          <>
-            <div className="field">
-              <label htmlFor="f-soil">Soil texture</label>
-              <select id="f-soil" value={soilType} onChange={e => onSettingsChange({ soilType: e.target.value })}>
-                {opts.soils?.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="f-method">Irrigation method</label>
-              <select id="f-method" value={method} onChange={e => onSettingsChange({ method: e.target.value })}>
-                {opts.methods && Object.entries(opts.methods).map(([m, eff]) => <option key={m} value={m}>{m} ({Math.round(eff * 100)}%)</option>)}
-              </select>
-            </div>
-          </>
-        )}
-        <div className="field">
-          <label htmlFor="f-pump">Pump (m³/h)</label>
-          <input id="f-pump" type="number" value={pumpFlow} min="1" max="200" step="0.5" onChange={e => onSettingsChange({ pumpFlow: e.target.value })} />
-        </div>
-        <div className="field">
-          <label htmlFor="f-probe">Probe reading (m³/m³)</label>
-          <input id="f-probe" type="number" value={sensor} min="0" max="0.6" step="0.005" placeholder="optional"
-            aria-invalid={!sensorValid} className={sensorValid ? '' : 'invalid'} onChange={e => setSensor(e.target.value)} />
-        </div>
-        <div className="field wide">
-          <label htmlFor="f-rain">Rain forecast, mm/day</label>
-          <input id="f-rain" type="text" value={rainText} placeholder="e.g. 0, 12, 25 (from today)" onChange={e => setRainText(e.target.value)} />
-        </div>
-        <label className="check-field">
-          <input type="checkbox" checked={useLive} onChange={e => setUseLive(e.target.checked)} />
-          Live weather
-        </label>
-        <button className="btn primary" onClick={() => planEnabled && refetchPlan()} disabled={!planEnabled || planLoading}>
-          {planLoading ? 'Updating…' : 'Refresh'}
-        </button>
       </section>
 
-      {!sensorValid && <div className="alert warn mb-4">Probe reading must be between 0 and 0.6 m³/m³; it is being ignored.</div>}
-      {planError && <div className="alert error mb-4">Advisory error: {planError.message}</div>}
-      {!planError && !plan && planEnabled && <div className="skeleton mb-5" style={{ height: 150 }} />}
+      {!sensorValid && <div className="mb-3"><Alert tone="warn">{t('dash.probeInvalid')}</Alert></div>}
+      {planError && <div className="mb-3"><Alert tone="error">{t('dash.advisoryError', { msg: planError.message })}</Alert></div>}
+      {!planError && !plan && planEnabled && <Skeleton height={150} style={{ marginBottom: 20 }} />}
 
-      {statusInfo && rec && (
+      {rec && (
         <div className={'mb-5' + (planLoading ? ' is-stale' : '')}>
-          <div className="flex items-center gap-3 mb-4 flex-wrap">
-            <span className={'status-badge ' + statusInfo.cls}><span aria-hidden="true">{statusInfo.icon}</span> {statusInfo.label}</span>
-            {currentFarm && (
-              <span className="text-muted text-sm">
-                {farmId} &middot; {currentFarm.village}, {currentFarm.taluk} &middot; {fmt(currentFarm.area_ha, 2)} ha &middot; {planData.crop.stage_label} (day {cropAge})
-              </span>
-            )}
+          <div className="context-strip">
+            <StatusBadge status={rec.status} />
+            {currentFarm && <>
+              <span className="mono strong">{farmId}</span><span className="sep">·</span>
+              <span>{currentFarm.village}, {currentFarm.taluk}</span><span className="sep">·</span>
+              <span>{fmtNum(currentFarm.area_ha, 2)} ha</span><span className="sep">·</span>
+              <span>{t('stage.' + stage)} ({t('dash.cropDay', { n: cropAge })})</span>
+            </>}
           </div>
           <div className="stat-grid">
-            <StatTile label="Available water" value={fmt(availablePct, 0, '%')}
-              delta={plan.soil_moisture_source === 'sensor' ? `probe ${fmt(plan.soil_moisture_used, 3)} m³/m³` : `ML index → ${fmt(plan.soil_moisture_used, 3)} m³/m³`}
-              tone={availablePct <= triggerPct ? 'danger' : availablePct <= soonPct ? 'warn' : undefined} />
-            <StatTile label="Next irrigation" value={fmtDate(rec.next_irrigation_date)}
-              delta={rec.days_until_irrigation === 0 ? 'today' : `in ${rec.days_until_irrigation} day${rec.days_until_irrigation === 1 ? '' : 's'}`} />
-            <StatTile label="Pump run time" value={fmt(rec.duration_hours, 1, ' h')} delta={`${fmtInt(rec.volume_m3)} m³ gross · ${fmt(rec.gross_depth_mm, 0)} mm`} />
-            <StatTile label="Crop water use" value={fmt(planData.water_requirement.etc_mm_day, 1, ' mm/d')} delta={`Kc ${planData.crop.kc} · ETo ${fmt(planData.water_requirement.eto_mm_day, 1)}`} />
-            <StatTile label="Water stress" value={planData.water_stress.category.replace(/_/g, ' ')}
-              delta={`Ks ${fmt(planData.water_stress.ks, 2)}`} tone={planData.water_stress.stress_index > 0.2 ? 'danger' : undefined} />
+            <Stat label={t('dash.kpi.available')} icon="drop" tone={availablePct <= triggerPct ? 'status-now' : availablePct <= soonPct ? 'status-soon' : 'water'}
+              value={`${fmtNum(availablePct)}%`}
+              delta={plan.soil_moisture_source === 'sensor' ? t('dash.kpi.probeValue', { v: fmtNum(plan.soil_moisture_used, 3) }) : t('dash.kpi.mlValue', { v: fmtNum(plan.soil_moisture_used, 3) })} />
+            <Stat label={t('dash.kpi.next')} icon="calendar" tone={STATUS_VAR[rec.status]} value={fmtDate(rec.next_irrigation_date)}
+              delta={rec.days_until_irrigation === 0 ? t('common.today') : rec.days_until_irrigation === 1 ? t('common.inDay') : t('common.inDays', { n: rec.days_until_irrigation })} />
+            <Stat label={t('dash.kpi.pumpTime')} icon="pump" tone="accent" value={`${fmtNum(rec.duration_hours, 1)} h`} delta={t('dash.kpi.gross', { v: fmtNum(rec.volume_m3), mm: fmtNum(rec.gross_depth_mm) })} />
+            <Stat label={t('dash.kpi.cropUse')} icon="sun" tone="accent-2" value={`${fmtNum(P.water_requirement.etc_mm_day, 1)} mm/d`} delta={`Kc ${fmtNum(P.crop.kc, 2)} · ETo ${fmtNum(P.water_requirement.eto_mm_day, 1)}`}>
+              <Sparkline values={P.projection.map(r => r.etc_mm)} color="var(--accent-2)" />
+            </Stat>
+            <Stat label={t('dash.kpi.stress')} icon="thermo" tone={P.water_stress.stress_index > 0.2 ? 'status-now' : 'accent'} value={t('stress.' + P.water_stress.category)} delta={`Ks ${fmtNum(P.water_stress.ks, 2)}`}>
+              <Sparkline values={P.projection.map(r => r.depletion_start_mm)} color="var(--status-soon)" />
+            </Stat>
           </div>
         </div>
       )}
 
-      <div className="tabs" role="tablist">
-        {TABS.map(t => (
-          <button key={t.id} role="tab" aria-selected={activeTab === t.id} className={'tab' + (activeTab === t.id ? ' active' : '')} onClick={() => setActiveTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs active={tab} onChange={setTab} tabs={[
+        { id: 'advisory', label: t('dash.tabs.advisory'), icon: 'leaf' },
+        { id: 'water', label: t('dash.tabs.water'), icon: 'drop' },
+        { id: 'crop', label: t('dash.tabs.crop'), icon: 'seed' },
+        { id: 'model', label: t('dash.tabs.model'), icon: 'sliders' },
+        { id: 'review', label: t('dash.tabs.review'), icon: 'user' },
+      ]} />
 
-      {activeTab === 'advisory' && (
-        <div className="grid-2 gap-4">
-          <div className="flex flex-col gap-4">
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Plot view</span>
-                <span className="text-muted text-sm">{village !== 'All' ? village : taluk !== 'All' ? taluk : 'All plots'} &middot; click a plot to open it</span>
-              </div>
-              <FarmMap geojson={geojson} fleetData={fleet} selectedId={farmId} focusSelected
-                onFarmClick={id => onSettingsChange({ farmId: id })} height={320} />
-            </div>
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Root-zone moisture</span>
-                <span className={'card-tag ' + (plan?.soil_moisture_source === 'sensor' ? 'ok' : 'warn')}>
-                  {plan?.soil_moisture_source === 'sensor' ? 'field probe' : 'ML estimate'}
-                </span>
-              </div>
-              <div className="card-body flex items-center gap-4 flex-wrap">
-                <SoilGauge availablePct={availablePct} triggerPct={triggerPct} soonPct={soonPct}
-                  caption={triggerPct != null ? `trigger at ${triggerPct.toFixed(0)}%` : null} />
-                <dl className="kv-list" style={{ flex: 1, minWidth: 200 }}>
-                  {calibration?.method === 'percentile_rank' && (<>
-                    <dt>Model value</dt><dd>{fmt(calibration.model_value, 4)} m³/m³</dd>
-                    <dt>Wetness rank</dt><dd>{fmt(calibration.relative_wetness * 100, 0)}th pct of fleet</dd>
-                  </>)}
-                  <dt>Root-zone used</dt><dd>{fmt(plan?.soil_moisture_used, 3)} m³/m³</dd>
-                  <dt>FC / WP</dt><dd>{fmt(soilWater?.field_capacity, 2)} / {fmt(soilWater?.wilting_point, 2)}</dd>
-                  <dt>NDVI &middot; LAI</dt><dd>{fmt(farmFields?.NDVI, 3)} &middot; {fmt(farmFields?.LAI, 2)}</dd>
-                  <dt>Temp &middot; RH</dt><dd>{fmt(farmFields?.Temperature_C, 1, ' °C')} &middot; {fmt(farmFields?.Relative_Humidity, 0, '%')}</dd>
-                  <dt>Season rain</dt><dd>{fmt(farmFields?.Rainfall_mm, 0, ' mm')}</dd>
-                  <dt>Soil pH &middot; OC</dt><dd>{fmt(farmFields?.Soil_pH, 1)} &middot; {fmt(farmFields?.Organic_Carbon, 1)}</dd>
-                </dl>
-              </div>
-              {calibration?.note && <p className="card-foot text-muted text-xs">{calibration.note}</p>}
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            {plan && (
-              <>
-                <div className="card">
-                  <div className="card-header">
-                    <span className="card-title">Irrigation advisory</span>
-                    <div className="flex gap-2">
-                      <button className="btn sm" onClick={copyAdvisory}>Copy</button>
-                      <button className="btn sm" onClick={speakAdvisory} aria-pressed={speaking}>{speaking ? 'Stop' : 'Read aloud'}</button>
-                      <a className="btn sm" href={whatsappLink} target="_blank" rel="noreferrer">WhatsApp</a>
-                    </div>
-                  </div>
-                  <div className="card-body">
-                    <div className={'advisory-text' + (rec?.status === 'IRRIGATE_NOW' ? ' urgent' : '')} lang={language}>
-                      {plan.advisory_text}
-                    </div>
-                    {planData?.rainfall_adjustment?.postponed_days > 0 && (
-                      <div className="alert info mt-2">
-                        Forecast rain of {fmt(planData.rainfall_adjustment.forecast_rain_mm, 0)} mm postpones irrigation by {planData.rainfall_adjustment.postponed_days} day(s).
+      {tab === 'advisory' && (
+        <div className="grid-main">
+          <div className="stack">
+            <Card title={t('dash.plotView')} icon="globe" flush tag={currentFarm?.village}>
+              <FarmMap geojson={geojson} fleetData={fleet} farmsMeta={farms} selectedId={farmId} focusSelected onFarmClick={id => onSettingsChange({ farmId: id })} height={400} />
+            </Card>
+            <Card title={t('dash.weatherStrip')} icon="rain" tag={forecast?.eto_mm?.length ? 'Open-Meteo' : undefined} tagTone="water">
+              {forecast?.dates?.length ? (
+                <div className="weather-strip">
+                  {forecast.dates.map((d, i) => {
+                    const rain = forecast.rain_mm?.[i] ?? 0
+                    return (
+                      <div key={d} className={'wx' + (rain >= 5 ? ' wet' : '')}>
+                        <span className="d">{fmtDate(d, { weekday: 'short', day: 'numeric' })}</span>
+                        <Icon name={rain >= 5 ? 'rain' : 'sun'} size={18} style={{ color: rain >= 5 ? 'var(--water)' : 'var(--status-soon)' }} />
+                        <span className="t">{fmtNum(forecast.temperature_c?.[i], 0)}°</span>
+                        <span className="r">{fmtNum(rain, 1)} mm</span>
+                        <div className="rain-bar" title={t('dash.rainProb')}><span style={{ width: `${forecast.rain_probability_pct?.[i] ?? 0}%` }} /></div>
                       </div>
-                    )}
-                    <p className="text-muted text-xs mt-2">Weather: {plan.weather?.note}</p>
-                  </div>
+                    )
+                  })}
                 </div>
-
-                <div className="card">
-                  <div className="card-header">
-                    <span className="card-title">Crop stage</span>
-                    <span className="card-tag">{planData.crop.stage_label} &middot; root {planData.crop.root_depth_m} m</span>
-                  </div>
-                  <div className="card-body">
-                    <KcCurveChart stageDays={opts?.stage_days} kc={opts?.kc} cropAge={cropAge} />
-                  </div>
+              ) : <p className="sub small">{t('dash.weatherNone')}</p>}
+              {plan?.weather?.note && <p className="muted xs mt-2">{t('dash.weather', { note: plan.weather.note })}</p>}
+            </Card>
+          </div>
+          <div className="stack">
+            {plan && (
+              <Card title={t('dash.advisory')} icon="info" actions={<>
+                <button className="btn sm" onClick={copyAdvisory}><Icon name="copy" size={13} />{t('common.copy')}</button>
+                <button className="btn sm" onClick={speak} aria-pressed={speaking}><Icon name="speaker" size={13} />{speaking ? t('dash.stop') : t('dash.readAloud')}</button>
+                <a className="btn sm" href={`https://wa.me/?text=${encodeURIComponent(`${farmId}: ${plan.advisory_text}`)}`} target="_blank" rel="noreferrer"><Icon name="share" size={13} />{t('dash.whatsapp')}</a>
+              </>}>
+                <div className={'advisory-text' + (rec?.status === 'IRRIGATE_NOW' ? ' urgent' : '')} lang={lang}>{plan.advisory_text}</div>
+                {P?.rainfall_adjustment?.postponed_days > 0 && <div className="mt-3"><Alert tone="info">{t('dash.rainPostpones', { mm: fmtNum(P.rainfall_adjustment.forecast_rain_mm), d: P.rainfall_adjustment.postponed_days })}</Alert></div>}
+              </Card>
+            )}
+            {plan && (
+              <Card title={t('dash.moisture')} icon="drop" tag={t('source.' + plan.soil_moisture_source)} tagTone={plan.soil_moisture_source === 'sensor' ? 'ok' : 'warn'} foot={calib?.method === 'percentile_rank' ? calib.note : null}>
+                <div className="row" style={{ alignItems: 'center', gap: 20 }}>
+                  <SoilGauge availablePct={availablePct} triggerPct={triggerPct} soonPct={soonPct} />
+                  <dl className="kv" style={{ flex: 1, minWidth: 200 }}>
+                    {calib?.method === 'percentile_rank' && <>
+                      <dt>{t('dash.modelValue')}</dt><dd>{fmtNum(calib.model_value, 4)} m³/m³</dd>
+                      <dt>{t('dash.wetRank')}</dt><dd>{t('dash.wetRankValue', { n: fmtNum(calib.relative_wetness * 100) })}</dd>
+                    </>}
+                    <dt>{t('dash.rootUsed')}</dt><dd>{fmtNum(plan.soil_moisture_used, 3)} m³/m³</dd>
+                    <dt>{t('dash.fcwp')}</dt><dd>{fmtNum(sw?.field_capacity, 2)} / {fmtNum(sw?.wilting_point, 2)}</dd>
+                    <dt>TAW · RAW</dt><dd>{fmtNum(sw?.taw_mm)} · {fmtNum(sw?.raw_mm)} mm</dd>
+                  </dl>
                 </div>
-
-                <div className="card">
-                  <div className="card-header">
-                    <span className="card-title">Fertigation &middot; next split</span>
-                    <span className="card-tag warn">placeholder doses</span>
-                  </div>
-                  <div className="card-body" style={{ padding: 0 }}>
-                    <div className="table-wrap">
-                      <table className="data-table">
-                        <thead><tr><th>Product</th><th className="num">kg/acre</th><th className="num">kg (this plot)</th></tr></thead>
-                        <tbody>
-                          {Object.entries(plan.fertigation?.products_per_application_kg_acre || {}).map(([p, v]) => (
-                            <tr key={p}>
-                              <td>{p}</td>
-                              <td className="num">{fmt(v, 2)}</td>
-                              <td className="num">{fmt(plan.fertigation.products_per_application_kg_plot?.[p], 2)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="card-foot text-muted text-xs">
-                      {plan.fertigation?.applications_in_stage} splits this stage &middot; organic carbon {plan.fertigation?.organic_carbon_rating} (N factor {plan.fertigation?.nitrogen_adjustment_factor}) &middot; {plan.fertigation?.timing_note}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="card">
-                  <div className="card-header">
-                    <span className="card-title">Pump sessions</span>
-                    <span className="text-muted text-sm">{(plan.pump_sessions || []).length} sessions &middot; morning window first</span>
-                  </div>
-                  <div className="card-body" style={{ padding: 0 }}>
-                    <div className="table-wrap" style={{ maxHeight: 260 }}>
-                      <table className="data-table">
-                        <thead><tr><th>Date</th><th>Start</th><th>End</th><th className="num">Hours</th></tr></thead>
-                        <tbody>
-                          {(plan.pump_sessions || []).map((s, i) => (
-                            <tr key={i}><td>{s.date}</td><td>{s.start}</td><td>{s.end}</td><td className="num">{fmt(s.hours, 1)}</td></tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </>
+              </Card>
+            )}
+            {events.length > 0 && (
+              <Card title={t('dash.nextEvents')} icon="calendar">
+                <ul className="timeline">
+                  {events.map((e, i) => (
+                    <li key={i}>
+                      <span className="when">{fmtDate(e.date, { day: 'numeric', month: 'short' })}</span>
+                      <span className="what" style={{ '--tone': e.tone }}>{e.title}{e.sub && <small>{e.sub}</small>}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
             )}
           </div>
         </div>
       )}
 
-      {activeTab === 'water' && plan && (
-        <div className="flex flex-col gap-4">
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Root-zone water balance, next {planData.projection.length} days</span>
-              <span className="text-muted text-sm">irrigate when depletion reaches the trigger line</span>
-            </div>
-            <div className="card-body">
-              <WaterBalanceChart projection={planData.projection} rawMM={soilWater.raw_mm} tawMM={soilWater.taw_mm} />
-              <p className="text-muted text-xs mt-2">
-                TAW {fmt(soilWater.taw_mm, 0)} mm &middot; RAW {fmt(soilWater.raw_mm, 0)} mm (p = {soilWater.depletion_fraction_p}) &middot; root depth {planData.crop.root_depth_m} m &middot; ETo: {planData.inputs.eto_source}
-              </p>
-            </div>
+      {tab === 'water' && plan && (
+        <div className="stack">
+          <Card title={t('dash.balanceTitle', { n: P.projection.length })} icon="drop" tag={t('dash.balanceHint')}
+            foot={t('dash.balanceFoot', { taw: fmtNum(sw.taw_mm), raw: fmtNum(sw.raw_mm), p: sw.depletion_fraction_p, root: P.crop.root_depth_m, eto: P.inputs.eto_source })}>
+            <WaterBalanceChart projection={P.projection} rawMM={sw.raw_mm} tawMM={sw.taw_mm} />
+          </Card>
+          <div className="grid-2">
+            <Card title={t('dash.yieldRisk')} icon="alert" tag="FAO-33 Ky" foot={t('dash.yieldNote')}><YieldLossChart data={plan.yield_loss_if_delayed} /></Card>
+            <Card title={t('dash.budget')} icon="layers">
+              <dl className="kv">
+                <dt>{t('dash.etcToday')}</dt><dd>{fmtNum(P.water_requirement.etc_mm_day, 2)} mm · {fmtNum(P.water_requirement.etc_m3_day)} m³</dd>
+                <dt>{t('dash.etcHorizon')}</dt><dd>{fmtNum(P.water_requirement.horizon_etc_mm)} mm</dd>
+                <dt>{t('dash.depletionNow')}</dt><dd>{t('dash.depletionOf', { mm: fmtNum(sw.depletion_mm, 1), pct: fmtNum(sw.depletion_ratio * 100) })}</dd>
+                <dt>{t('dash.netDepth')}</dt><dd>{fmtNum(rec.net_depth_mm, 1)} mm</dd>
+                <dt>{t('dash.grossDepth')}</dt><dd>{t('dash.grossAt', { mm: fmtNum(rec.gross_depth_mm, 1), eff: Math.round(rec.application_efficiency * 100) })}</dd>
+                <dt>{t('dash.volume')}</dt><dd>{fmtNum(rec.volume_m3)} m³</dd>
+                <dt>{t('dash.pumpTime')}</dt><dd>{t('dash.pumpAt', { h: fmtNum(rec.duration_hours, 1), q: P.inputs.pump_flow_m3h })}</dd>
+                <dt>{t('dash.rainInForecast')}</dt><dd>{fmtNum(P.rainfall_adjustment.forecast_rain_mm)} mm</dd>
+              </dl>
+            </Card>
           </div>
-          <div className="grid-2 gap-4">
-            <div className="card">
-              <div className="card-header"><span className="card-title">Yield risk if irrigation is delayed</span><span className="card-tag">FAO-33 Ky</span></div>
-              <div className="card-body">
-                <YieldLossChart data={plan.yield_loss_if_delayed} />
-                <p className="text-muted text-xs mt-2">Relative to a fully irrigated stage. Not field-validated.</p>
-              </div>
-            </div>
-            <div className="card">
-              <div className="card-header"><span className="card-title">Water budget</span></div>
-              <div className="card-body">
-                <dl className="kv-list">
-                  <dt>ETc today</dt><dd>{fmt(planData.water_requirement.etc_mm_day, 2)} mm &middot; {fmtInt(planData.water_requirement.etc_m3_day)} m³</dd>
-                  <dt>ETc next 14 d</dt><dd>{fmt(planData.water_requirement.horizon_etc_mm, 0)} mm</dd>
-                  <dt>Depletion now</dt><dd>{fmt(soilWater.depletion_mm, 1)} mm ({fmt(soilWater.depletion_ratio * 100, 0)}% of TAW)</dd>
-                  <dt>Net depth</dt><dd>{fmt(rec.net_depth_mm, 1)} mm</dd>
-                  <dt>Gross depth</dt><dd>{fmt(rec.gross_depth_mm, 1)} mm @ {Math.round(rec.application_efficiency * 100)}% efficiency</dd>
-                  <dt>Volume</dt><dd>{fmtInt(rec.volume_m3)} m³</dd>
-                  <dt>Pump time</dt><dd>{fmt(rec.duration_hours, 1)} h at {planData.inputs.pump_flow_m3h} m³/h</dd>
-                  <dt>Rain in forecast</dt><dd>{fmt(planData.rainfall_adjustment.forecast_rain_mm, 0)} mm</dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><span className="card-title">Daily projection</span></div>
-            <div className="card-body" style={{ padding: 0 }}>
-              <div className="table-wrap">
+          <div className="grid-2">
+            <Card title={t('dash.projection')} icon="calendar" flush>
+              <div className="table-wrap" style={{ maxHeight: 360 }}>
                 <table className="data-table">
-                  <thead><tr><th>Date</th><th className="num">Temp °C</th><th className="num">ETo</th><th className="num">ETc</th><th className="num">Rain</th><th className="num">Eff. rain</th><th className="num">Depletion</th><th className="num">Ks</th></tr></thead>
+                  <thead><tr><th>{t('common.date')}</th><th className="num">{t('dash.col.temp')}</th><th className="num">ETc</th><th className="num">{t('dash.col.effRain')}</th><th className="num">{t('dash.col.depletion')}</th><th className="num">Ks</th></tr></thead>
                   <tbody>
-                    {planData.projection.map(r => (
-                      <tr key={r.date} className={r.depletion_start_mm >= soilWater.raw_mm ? 'row-alert' : ''}>
-                        <td>{fmtDate(r.date)}</td><td className="num">{fmt(r.temperature_c, 1)}</td><td className="num">{fmt(r.eto_mm, 2)}</td>
-                        <td className="num">{fmt(r.etc_mm, 2)}</td><td className="num">{fmt(r.rain_mm, 1)}</td><td className="num">{fmt(r.effective_rain_mm, 1)}</td>
-                        <td className="num">{fmt(r.depletion_start_mm, 1)}</td><td className="num">{fmt(r.ks, 2)}</td>
+                    {P.projection.map(r => (
+                      <tr key={r.date} className={r.depletion_start_mm >= sw.raw_mm ? 'row-alert' : ''}>
+                        <td>{fmtDate(r.date)}</td><td className="num">{fmtNum(r.temperature_c, 1)}</td><td className="num">{fmtNum(r.etc_mm, 2)}</td>
+                        <td className="num">{fmtNum(r.effective_rain_mm, 1)}</td><td className="num">{fmtNum(r.depletion_start_mm, 1)}</td><td className="num">{fmtNum(r.ks, 2)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </div>
+            </Card>
+            <Card title={t('dash.sessions')} icon="pump" tag={t('dash.sessionsHint', { n: (plan.pump_sessions || []).length })} flush>
+              <div className="table-wrap" style={{ maxHeight: 360 }}>
+                <table className="data-table">
+                  <thead><tr><th>{t('common.date')}</th><th>{t('common.start')}</th><th>{t('common.end')}</th><th className="num">h</th></tr></thead>
+                  <tbody>{(plan.pump_sessions || []).map((s, i) => <tr key={i}><td>{fmtDate(s.date, { weekday: 'short', day: 'numeric', month: 'short' })}</td><td>{s.start}</td><td>{s.end}</td><td className="num">{fmtNum(s.hours, 1)}</td></tr>)}</tbody>
+                </table>
+              </div>
+            </Card>
           </div>
         </div>
       )}
 
-      {activeTab === 'model' && (
-        <div className="flex flex-col gap-4">
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">What-if simulator</span>
-              <span className="card-tag">model + FAO-56 plan</span>
-            </div>
-            <div className="card-body">
-              <p className="text-muted text-sm mb-4">
-                Change this farm's inputs and see how the soil-moisture estimate and the irrigation plan respond.
-                Slider ranges span the values observed in the dataset; the model is unreliable outside them.
-              </p>
-              <div className="whatif-grid mb-4">
-                {WHATIF_FEATURES.map(({ key, label, unit, step }) => {
-                  const range = opts?.feature_ranges?.[key]
-                  const base = farmFields?.[key]
-                  if (!range || base == null) return null
-                  const value = wiValues[key] ?? base
+      {tab === 'crop' && plan && (
+        <div className="stack">
+          <div className="grid-main">
+            <Card title={t('dash.soil3d')} icon="cube" flush tag="three.js" tagTone="water">
+              <Suspense fallback={<Skeleton height={400} style={{ borderRadius: 0 }} />}>
+                <SoilProfile3D availablePct={availablePct} triggerPct={triggerPct} rootDepthM={P.crop.root_depth_m} stage={stage} status={rec.status} height={400} />
+              </Suspense>
+            </Card>
+            <div className="stack">
+              <Card title={t('dash.cropStage')} icon="seed" tag={`${t('stage.' + stage)} · ${t('dash.rootDepth', { m: P.crop.root_depth_m })}`}>
+                {stageDays && (() => {
+                  const cols = STAGES.map(s => `${stageDays[s]}fr`).join(' ')
+                  let acc = 0
                   return (
-                    <div className="whatif-slider" key={key}>
-                      <label className="text-sm">
-                        <span>{label}</span>
-                        <strong>{fmt(value, step < 1 ? 2 : 0)}{unit && ' ' + unit}</strong>
-                      </label>
-                      <input type="range" min={range.min} max={range.max} step={step} value={value}
-                        onChange={e => setWiValues(v => ({ ...v, [key]: Number(e.target.value) }))} />
-                      <span className="text-xs text-muted">farm {fmt(base, step < 1 ? 2 : 0)} &middot; range {fmt(range.min, step < 1 ? 2 : 0)}–{fmt(range.max, step < 1 ? 2 : 0)}</span>
-                    </div>
+                    <>
+                      <div className="small sub">{t('dash.stageProgress')}: {fmtNum(Math.min(100, (100 * cropAge) / seasonEnd))}%</div>
+                      <div className="stage-track" style={{ '--cols': cols }}>
+                        {STAGES.map(s => {
+                          const from = acc; acc += stageDays[s]
+                          const state = cropAge >= acc ? 'done' : cropAge >= from ? 'now' : ''
+                          const fill = state === 'now' ? ((cropAge - from) / stageDays[s]) * 100 : 0
+                          return <div key={s} className={'seg ' + state}>{state === 'now' && <span style={{ width: `${fill}%` }} />}</div>
+                        })}
+                      </div>
+                      <div className="stage-names" style={{ '--cols': cols }}>
+                        {STAGES.map(s => <span key={s} className={s === stage ? 'now' : ''}>{t('stage.' + s)}</span>)}
+                      </div>
+                    </>
                   )
-                })}
-              </div>
-              <div className="flex gap-2">
-                <button className="btn primary" onClick={handleWhatIf} disabled={whatIfMut.isPending}>
-                  {whatIfMut.isPending ? 'Simulating…' : 'Run simulation'}
-                </button>
-                <button className="btn" onClick={() => { setWiValues({}); setWiResult(null) }}>Reset</button>
-              </div>
-              {wiResult && (
-                <div className="table-wrap mt-4">
-                  <table className="data-table compare">
-                    <thead><tr><th></th><th className="num">Current</th><th className="num">Scenario</th><th className="num">Change</th></tr></thead>
-                    <tbody>
-                      {[
-                        ['Model soil moisture', r => r.model.predicted_soil_moisture, 4],
-                        ['Wetness rank (pct)', r => r.plan.relative_wetness * 100, 0],
-                        ['Root-zone moisture', r => r.plan.rootzone_moisture, 3],
-                        ['Days until irrigation', r => r.plan.days_until_irrigation, 0],
-                        ['Volume (m³)', r => r.plan.volume_m3, 0],
-                        ['Pump hours', r => r.plan.duration_hours, 1],
-                      ].map(([name, get, d]) => {
-                        const a = get(wiResult.original), b = get(wiResult.simulated)
-                        const diff = b - a
-                        return (
-                          <tr key={name}>
-                            <td>{name}</td><td className="num">{fmt(a, d)}</td><td className="num">{fmt(b, d)}</td>
-                            <td className={'num ' + (Math.abs(diff) < 10 ** -d / 2 ? 'text-muted' : '')}>{Math.abs(diff) < 10 ** -d / 2 ? 'no change' : (diff > 0 ? '+' : '') + fmt(diff, d)}</td>
-                          </tr>
-                        )
-                      })}
-                      <tr>
-                        <td>Status</td>
-                        <td className="num">{STATUS[wiResult.original.plan.status]?.label}</td>
-                        <td className="num">{STATUS[wiResult.simulated.plan.status]?.label}</td>
-                        <td className="num">{wiResult.original.plan.status === wiResult.simulated.plan.status ? <span className="text-muted">same</span> : 'changed'}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p className="text-muted text-xs mt-2">{wiResult.simulation_note}</p>
-                </div>
-              )}
+                })()}
+                <div className="mt-3"><KcCurveChart stageDays={stageDays} kc={opts?.kc} cropAge={cropAge} /></div>
+              </Card>
+              <div className="callout"><Icon name="leaf" size={18} /><div><strong>{t('dash.stageGuide')}</strong><br />{t('guide.stageTips.' + stage)}</div></div>
             </div>
           </div>
-          {farmDetail?.model && (
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Why the model estimates {fmt(farmDetail.model.predicted_soil_moisture, 4)} m³/m³</span>
-                <span className="card-tag">{farmDetail.model.model_name}</span>
+          <div className="grid-2">
+            <Card title={t('dash.farmProfile')} icon="chart" foot={t('dash.farmProfileHint')}>
+              {analytics?.feature_summary && ff ? (
+                <div className="bullet-list">
+                  {PROFILE.map(k => <BulletRow key={k} name={t('feature.' + k)} value={ff[k]} s={analytics.feature_summary[k]} digits={['Rainfall_mm', 'Relative_Humidity'].includes(k) ? 0 : 2} />)}
+                </div>
+              ) : <Skeleton height={220} />}
+            </Card>
+            <Card title={t('dash.fert')} icon="flask" tag={t('dash.placeholderDoses')} tagTone="warn" flush
+              foot={<>{t('dash.fertNote', { n: plan.fertigation?.applications_in_stage, oc: t('dash.ocRating.' + plan.fertigation?.organic_carbon_rating), f: plan.fertigation?.nitrogen_adjustment_factor })}<br />{t('dash.fertTiming')}</>}>
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>{t('dash.product')}</th><th className="num">{t('dash.kgAcre')}</th><th className="num">{t('dash.kgPlot')}</th></tr></thead>
+                  <tbody>
+                    {Object.entries(plan.fertigation?.products_per_application_kg_acre || {}).map(([p, v]) => (
+                      <tr key={p}><td className="strong">{p}</td><td className="num">{fmtNum(v, 2)}</td><td className="num">{fmtNum(plan.fertigation.products_per_application_kg_plot?.[p], 2)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="card-body">
-                <p className="text-muted text-sm mb-4">
-                  One-at-a-time baseline replacement, in percentage points of soil moisture. Shows sensitivity, not causation.
-                  Village and Taluk dominate because the target is a village-level satellite value (see Model Insights).
-                </p>
-                <ContributionChart contributions={farmDetail.model.top_factors} />
-              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {tab === 'model' && (
+        <div className="stack">
+          <Card title={t('dash.whatIf')} icon="sliders" tag={t('dash.whatIfTag')}>
+            <p className="sub small mb-4">{t('dash.whatIfIntro')}</p>
+            <div className="whatif-grid mb-4">
+              {WHATIF.map(({ key, step, d, unit }) => {
+                const range = opts?.feature_ranges?.[key]
+                const base = ff?.[key]
+                if (!range || base == null) return null
+                const value = wiValues[key] ?? base
+                return (
+                  <div className="whatif-slider" key={key}>
+                    <label><span>{t('dash.wi.' + key)}</span><strong>{fmtNum(value, d)} {unit}</strong></label>
+                    <input type="range" min={range.min} max={range.max} step={step} value={value} onChange={e => setWiValues(v => ({ ...v, [key]: Number(e.target.value) }))} />
+                    <span className="xs muted">{t('dash.farmValue', { v: fmtNum(base, d), min: fmtNum(range.min, d), max: fmtNum(range.max, d) })}</span>
+                  </div>
+                )
+              })}
             </div>
+            <div className="row">
+              <button className="btn primary" onClick={runWhatIf} disabled={whatIfMut.isPending}>{whatIfMut.isPending ? t('dash.simulating') : t('dash.runSim')}</button>
+              <button className="btn" onClick={() => { setWiValues({}); setWiResult(null) }}>{t('common.reset')}</button>
+            </div>
+            {wiResult && (
+              <div className="table-wrap mt-4">
+                <table className="data-table">
+                  <thead><tr><th></th><th className="num">{t('dash.current')}</th><th className="num">{t('dash.scenario')}</th><th className="num">{t('dash.change')}</th></tr></thead>
+                  <tbody>
+                    {[
+                      ['modelSm', r => r.model.predicted_soil_moisture, 4],
+                      ['rank', r => r.plan.relative_wetness * 100, 0],
+                      ['rootzone', r => r.plan.rootzone_moisture, 3],
+                      ['days', r => r.plan.days_until_irrigation, 0],
+                      ['volume', r => r.plan.volume_m3, 0],
+                      ['hours', r => r.plan.duration_hours, 1],
+                    ].map(([k, get, dd]) => {
+                      const a = get(wiResult.original), b = get(wiResult.simulated), diff = b - a
+                      const none = Math.abs(diff) < 10 ** -dd / 2
+                      return <tr key={k}><td className="strong">{t('dash.wi.' + k)}</td><td className="num">{fmtNum(a, dd)}</td><td className="num">{fmtNum(b, dd)}</td><td className={'num ' + (none ? 'muted' : 'tone-water')}>{none ? t('dash.noChange') : (diff > 0 ? '+' : '') + fmtNum(diff, dd)}</td></tr>
+                    })}
+                    <tr><td className="strong">{t('common.status')}</td><td className="num">{t('status.' + wiResult.original.plan.status)}</td><td className="num">{t('status.' + wiResult.simulated.plan.status)}</td><td className="num">{wiResult.original.plan.status === wiResult.simulated.plan.status ? <span className="muted">{t('dash.same')}</span> : t('dash.changed')}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+          {farmDetail?.model && (
+            <Card title={t('dash.why', { v: fmtNum(farmDetail.model.predicted_soil_moisture, 4) })} icon="chart" tag={farmDetail.model.model_name} foot={t('dash.whyNote')}>
+              <ContributionChart contributions={farmDetail.model.top_factors} />
+            </Card>
           )}
         </div>
       )}
 
-      {activeTab === 'review' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Human review</span>
-            <span className="card-tag">HITL feedback</span>
-          </div>
-          <div className="card-body">
-            <p className="text-muted mb-4 text-sm">
-              Recommendation under review: <strong>{rec ? `${STATUS[rec.status]?.label}, ${fmt(rec.duration_hours, 1)} h on ${rec.next_irrigation_date}` : '—'}</strong>.
-              Decisions are stored as labels for future model improvement.
-            </p>
-            <form className="filter-bar" onSubmit={handleFeedback} style={{ marginBottom: 0 }}>
-              <div className="field">
-                <label htmlFor="r-role">Reviewer</label>
-                <select id="r-role" name="role" defaultValue="field_officer">
-                  <option value="field_officer">Field officer</option>
-                  <option value="agronomist">Agronomist</option>
-                  <option value="farmer">Farmer</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="r-decision">Decision</label>
-                <select id="r-decision" name="decision" defaultValue="accepted">
-                  <option value="accepted">Accept</option>
-                  <option value="modified">Modify</option>
-                  <option value="rejected">Reject</option>
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="r-date">Override date</label>
-                <input id="r-date" type="date" name="date" />
-              </div>
-              <div className="field">
-                <label htmlFor="r-hours">Override hours</label>
-                <input id="r-hours" type="number" name="hours" min="0" step="0.5" placeholder={fmt(rec?.duration_hours, 1)} />
-              </div>
-              <div className="field wide">
-                <label htmlFor="r-comment">Comment</label>
-                <input id="r-comment" type="text" name="comment" maxLength={1000} placeholder="optional" />
-              </div>
-              <button className="btn primary" type="submit" disabled={feedbackMut.isPending || !rec}>
-                {feedbackMut.isPending ? 'Saving…' : 'Record decision'}
-              </button>
-            </form>
-            <p className="text-muted text-xs mt-2">Override date and hours are stored only when the decision is “Modify”.</p>
-          </div>
-        </div>
+      {tab === 'review' && (
+        <Card title={t('dash.review')} icon="user" tag={t('dash.reviewTag')} foot={t('dash.overrideNote')}>
+          <p className="sub small mb-4">
+            {t('dash.underReview', { rec: rec ? `${t('status.' + rec.status)}, ${fmtNum(rec.duration_hours, 1)} h, ${fmtDate(rec.next_irrigation_date)}` : '—' })} {t('dash.reviewNote')}
+          </p>
+          <form className="form-grid" onSubmit={handleFeedback}>
+            <div className="field"><label htmlFor="r-role">{t('dash.reviewer')}</label>
+              <select id="r-role" name="role" defaultValue="field_officer">{['field_officer', 'agronomist', 'farmer'].map(r => <option key={r} value={r}>{t('role.' + r)}</option>)}</select></div>
+            <div className="field"><label htmlFor="r-decision">{t('dash.decision')}</label>
+              <select id="r-decision" name="decision" defaultValue="accepted">
+                <option value="accepted">{t('decision.accept')}</option><option value="modified">{t('decision.modify')}</option><option value="rejected">{t('decision.reject')}</option>
+              </select></div>
+            <div className="field"><label htmlFor="r-date">{t('dash.overrideDate')}</label><input id="r-date" type="date" name="date" /></div>
+            <div className="field"><label htmlFor="r-hours">{t('dash.overrideHours')}</label><input id="r-hours" type="number" name="hours" min="0" step="0.5" placeholder={fmtNum(rec?.duration_hours, 1)} /></div>
+            <div className="field span-2"><label htmlFor="r-comment">{t('dash.comment')}</label><input id="r-comment" type="text" name="comment" maxLength={1000} placeholder={t('common.optional')} /></div>
+            <button className="btn primary" type="submit" disabled={feedbackMut.isPending || !rec}>{feedbackMut.isPending ? t('dash.saving') : t('dash.record')}</button>
+          </form>
+        </Card>
       )}
     </div>
   )

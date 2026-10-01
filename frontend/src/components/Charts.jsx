@@ -1,93 +1,90 @@
 import {
   ComposedChart, AreaChart, Area, BarChart, Bar, Line, XAxis, YAxis, Tooltip, Legend,
-  ReferenceLine, ResponsiveContainer, CartesianGrid, Cell,
+  ReferenceLine, ResponsiveContainer, CartesianGrid, Cell, RadialBarChart, RadialBar, PolarAngleAxis,
 } from 'recharts'
-import { STATUS_COLOR } from './FarmMap.jsx'
+import { useI18n, featureLabel } from '../i18n.jsx'
+import { STATUS_HEX } from './ui.jsx'
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-export const fmtDate = iso => {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : `${d.getDate()} ${MONTHS[d.getMonth()]}`
-}
-
-// One accent hue for magnitude; status colours only ever mean irrigation status.
-const ACCENT = '#00c896'
-const RAIN = '#38bdf8'
+// One accent hue for magnitude; water is cyan; status colours only mean irrigation status.
+const ACCENT = '#19d39b'
+const WATER = '#38bdf8'
 const POS = '#38bdf8'
 const NEG = '#c084fc'
-const TICK = { fill: 'var(--text-2)', fontSize: 11 }
+const TICK = { fill: 'var(--text-3)', fontSize: 11 }
 const GRID = 'var(--border)'
-const TOOLTIP = {
-  contentStyle: { background: 'var(--bg-card)', border: '1px solid var(--border-md)', borderRadius: 8, fontSize: 12, boxShadow: 'var(--shadow-md)' },
+export const TOOLTIP = {
+  contentStyle: { background: 'var(--bg-card)', border: '1px solid var(--border-strong)', borderRadius: 10, fontSize: 12, boxShadow: 'var(--shadow-md)', color: 'var(--text-1)' },
   labelStyle: { color: 'var(--text-2)', marginBottom: 4 },
   itemStyle: { color: 'var(--text-1)' },
   cursor: { fill: 'var(--bg-hover)' },
 }
+function mixHex(a, b, t) {
+  const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16))
+  const pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16))
+  return '#' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0')).join('')
+}
 const LEGEND = { wrapperStyle: { fontSize: 11, color: 'var(--text-2)' }, iconSize: 10 }
 
-/** Root-zone depletion projection with forecast rain on the same mm axis. */
-export function WaterBalanceChart({ projection, rawMM, tawMM, height = 260 }) {
+/** Root-zone depletion projection with effective rain on the same mm axis. */
+export function WaterBalanceChart({ projection, rawMM, tawMM, height = 280 }) {
+  const { t, fmtDate, fmtNum } = useI18n()
   if (!projection?.length) return null
   const data = projection.map(d => ({ ...d, label: fmtDate(d.date) }))
-  const names = { depletion_start_mm: 'Root-zone depletion', effective_rain_mm: 'Effective rain' }
+  const names = { depletion_start_mm: t('chart.depletion'), effective_rain_mm: t('chart.effRain') }
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 12, right: 12, left: -8, bottom: 0 }}>
+      <ComposedChart data={data} margin={{ top: 14, right: 12, left: -6, bottom: 0 }}>
         <defs>
           <linearGradient id="depGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={ACCENT} stopOpacity={0.28} />
-            <stop offset="95%" stopColor={ACCENT} stopOpacity={0} />
+            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
           </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
-        <YAxis tick={TICK} axisLine={false} tickLine={false} unit=" mm" width={62} domain={[0, dataMax => Math.ceil(Math.max(dataMax, rawMM || 0) * 1.1)]} />
-        <Tooltip {...TOOLTIP} formatter={(v, n) => [`${Number(v).toFixed(1)} mm`, names[n] || n]} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} minTickGap={12} />
+        <YAxis tick={TICK} axisLine={false} tickLine={false} unit=" mm" width={62} domain={[0, max => Math.ceil(Math.max(max, rawMM || 0) * 1.1)]} />
+        <Tooltip {...TOOLTIP} formatter={(v, n) => [`${fmtNum(v, 1)} mm`, names[n] || n]} />
         <Legend {...LEGEND} formatter={n => names[n] || n} />
-        {rawMM != null && (
-          <ReferenceLine y={rawMM} stroke={STATUS_COLOR.IRRIGATE_SOON} strokeDasharray="5 4"
-            label={{ value: `Irrigation trigger (RAW ${rawMM.toFixed(0)} mm)`, fill: 'var(--text-2)', fontSize: 10, position: 'insideTopLeft' }} />
-        )}
-        {tawMM != null && (
-          <ReferenceLine y={tawMM} stroke={STATUS_COLOR.IRRIGATE_NOW} strokeDasharray="2 4"
-            label={{ value: `Wilting (TAW ${tawMM.toFixed(0)} mm)`, fill: 'var(--text-2)', fontSize: 10, position: 'insideTopLeft' }} />
-        )}
-        <Bar dataKey="effective_rain_mm" fill={RAIN} radius={[4, 4, 0, 0]} maxBarSize={14} />
+        {rawMM != null && <ReferenceLine y={rawMM} stroke={STATUS_HEX.IRRIGATE_SOON} strokeDasharray="5 4" label={{ value: t('chart.trigger', { v: fmtNum(rawMM, 0) }), fill: 'var(--text-2)', fontSize: 10, position: 'insideTopLeft' }} />}
+        {tawMM != null && <ReferenceLine y={tawMM} stroke={STATUS_HEX.IRRIGATE_NOW} strokeDasharray="2 4" label={{ value: t('chart.wilting', { v: fmtNum(tawMM, 0) }), fill: 'var(--text-2)', fontSize: 10, position: 'insideTopLeft' }} />}
+        <Bar dataKey="effective_rain_mm" fill={WATER} radius={[4, 4, 0, 0]} maxBarSize={14} />
         <Area type="monotone" dataKey="depletion_start_mm" stroke={ACCENT} strokeWidth={2} fill="url(#depGrad)" dot={{ r: 3, fill: ACCENT }} activeDot={{ r: 5 }} />
       </ComposedChart>
     </ResponsiveContainer>
   )
 }
 
-/** FAO-33 relative yield loss for each delay. */
-export function YieldLossChart({ data, height = 200 }) {
+export function YieldLossChart({ data, height = 210 }) {
+  const { t, fmtNum } = useI18n()
   if (!data?.length) return null
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: -10, bottom: 12 }}>
+      <BarChart data={data} margin={{ top: 8, right: 8, left: -10, bottom: 14 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="delay_days" tick={TICK} axisLine={false} tickLine={false}
-          label={{ value: 'Delay after due date (days)', position: 'insideBottom', offset: -8, fill: 'var(--text-2)', fontSize: 10 }} />
+          label={{ value: t('chart.delay'), position: 'insideBottom', offset: -8, fill: 'var(--text-3)', fontSize: 10 }} />
         <YAxis tick={TICK} axisLine={false} tickLine={false} unit="%" />
-        <Tooltip {...TOOLTIP} labelFormatter={v => `${v}-day delay`} formatter={v => [`${Number(v).toFixed(2)}%`, 'Relative yield loss']} />
-        <Bar dataKey="relative_yield_loss_pct" fill={STATUS_COLOR.IRRIGATE_NOW} radius={[4, 4, 0, 0]} maxBarSize={36} />
+        <Tooltip {...TOOLTIP} labelFormatter={v => t('chart.delayLabel', { n: v })} formatter={v => [`${fmtNum(v, 2)}%`, t('chart.yieldLoss')]} />
+        <Bar dataKey="relative_yield_loss_pct" radius={[4, 4, 0, 0]} maxBarSize={38}>
+          {data.map((d, i) => <Cell key={i} fill={STATUS_HEX.IRRIGATE_NOW} fillOpacity={0.35 + 0.65 * (i / (data.length - 1 || 1))} />)}
+        </Bar>
       </BarChart>
     </ResponsiveContainer>
   )
 }
 
-/** Signed per-feature contribution to the model estimate. */
 export function ContributionChart({ contributions }) {
+  const { t, fmtNum } = useI18n()
   if (!contributions?.length) return null
-  const data = contributions.slice(0, 8).map(c => ({ feature: c.feature, value: Number(c.contribution) * 100 }))
+  const data = contributions.slice(0, 8).map(c => ({ feature: featureLabel(t, c.feature), value: Number(c.contribution) * 100 }))
   return (
-    <ResponsiveContainer width="100%" height={Math.max(180, data.length * 32)}>
+    <ResponsiveContainer width="100%" height={Math.max(200, data.length * 32)}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
-        <XAxis type="number" tick={TICK} axisLine={false} tickLine={false} unit=" pp" />
-        <YAxis type="category" dataKey="feature" tick={TICK} axisLine={false} tickLine={false} width={120} />
+        <XAxis type="number" tick={TICK} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="feature" tick={TICK} axisLine={false} tickLine={false} width={130} />
         <ReferenceLine x={0} stroke="var(--border-strong)" />
-        <Tooltip {...TOOLTIP} formatter={v => [`${v >= 0 ? '+' : ''}${Number(v).toFixed(4)} pp soil moisture`, 'Contribution']} />
+        <Tooltip {...TOOLTIP} formatter={v => [`${v >= 0 ? '+' : ''}${fmtNum(v, 4)} ${t('chart.contribUnit')}`, t('chart.contribution')]} />
         <Bar dataKey="value" radius={4} maxBarSize={18}>
           {data.map((d, i) => <Cell key={i} fill={d.value >= 0 ? POS : NEG} />)}
         </Bar>
@@ -96,58 +93,62 @@ export function ContributionChart({ contributions }) {
   )
 }
 
-/** Farms per due day, coloured by the status that day implies. */
-export function DueDayChart({ fleet, height = 220 }) {
+export function DueDayChart({ fleet, height = 230 }) {
+  const { t } = useI18n()
   if (!fleet?.length) return null
   const counts = {}
   fleet.forEach(f => {
     const c = (counts[f.due_day] ||= { day: f.due_day, IRRIGATE_NOW: 0, IRRIGATE_SOON: 0, NOT_REQUIRED: 0 })
-    c[f.status] = (c[f.status] || 0) + 1
+    c[f.status] += 1
   })
   const data = Object.values(counts).sort((a, b) => a.day - b.day)
-  const names = { IRRIGATE_NOW: 'Irrigate now', IRRIGATE_SOON: 'Due within 3 days', NOT_REQUIRED: 'Not required yet' }
+  const keys = Object.keys(STATUS_HEX)
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 4, right: 8, left: -10, bottom: 12 }}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: -10, bottom: 14 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="day" tick={TICK} axisLine={false} tickLine={false}
-          label={{ value: 'Days until irrigation is due', position: 'insideBottom', offset: -8, fill: 'var(--text-2)', fontSize: 10 }} />
+          label={{ value: t('chart.dueAxis'), position: 'insideBottom', offset: -8, fill: 'var(--text-3)', fontSize: 10 }} />
         <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} />
-        <Tooltip {...TOOLTIP} labelFormatter={v => `Due in ${v} day${v === 1 ? '' : 's'}`} formatter={(v, n) => [v, names[n]]} />
-        <Legend {...LEGEND} formatter={n => names[n]} />
-        {Object.keys(names).map(k => (
-          <Bar key={k} dataKey={k} stackId="s" fill={STATUS_COLOR[k]} stroke="var(--bg-card)" strokeWidth={1} maxBarSize={30} />
-        ))}
+        <Tooltip {...TOOLTIP} labelFormatter={v => t('chart.dueIn', { n: v })} formatter={(v, n) => [v, t('status.' + n)]} />
+        <Legend {...LEGEND} formatter={n => t('status.' + n)} />
+        {keys.map(k => <Bar key={k} dataKey={k} stackId="s" fill={STATUS_HEX[k]} stroke="var(--bg-card)" strokeWidth={1} maxBarSize={30} />)}
       </BarChart>
     </ResponsiveContainer>
   )
 }
 
-/** Gross volume falling due each day across the fleet. */
-export function DemandCalendarChart({ calendar, height = 240 }) {
+export function DemandCalendarChart({ calendar, height = 250 }) {
+  const { t, fmtDate, fmtNum } = useI18n()
   if (!calendar?.length) return null
   const data = calendar.map(d => ({ ...d, label: fmtDate(d.date) }))
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+        <defs>
+          <linearGradient id="calGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={WATER} />
+            <stop offset="100%" stopColor={ACCENT} />
+          </linearGradient>
+        </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} />
-        <YAxis tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} unit=" m³" width={64} />
+        <XAxis dataKey="label" tick={TICK} axisLine={false} tickLine={false} minTickGap={8} />
+        <YAxis tick={TICK} axisLine={false} tickLine={false} tickFormatter={v => (v >= 1000 ? `${fmtNum(v / 1000, 0)}k` : v)} unit=" m³" width={66} />
         <Tooltip {...TOOLTIP} content={({ active, payload, label }) => active && payload?.length ? (
           <div style={TOOLTIP.contentStyle} className="chart-tip">
             <div style={TOOLTIP.labelStyle}>{label}</div>
-            <div><strong>{Number(payload[0].payload.volume_m3).toLocaleString('en-IN')} m³</strong> gross</div>
-            <div>{payload[0].payload.farms_due} farms due &middot; {Number(payload[0].payload.pump_hours).toLocaleString('en-IN')} pump-h</div>
+            <div><strong>{fmtNum(payload[0].payload.volume_m3, 0)} m³</strong> {t('chart.gross')}</div>
+            <div>{t('chart.farmsDue', { n: payload[0].payload.farms_due })} · {t('chart.pumpH', { n: fmtNum(payload[0].payload.pump_hours, 0) })}</div>
           </div>
         ) : null} />
-        <Bar dataKey="volume_m3" fill={ACCENT} radius={[4, 4, 0, 0]} maxBarSize={34} />
+        <Bar dataKey="volume_m3" fill="url(#calGrad)" radius={[5, 5, 0, 0]} maxBarSize={34} />
       </BarChart>
     </ResponsiveContainer>
   )
 }
 
-/** Histogram from [{from, to, count}] bins. */
-export function HistogramChart({ bins, unit = '', format = v => v, height = 220 }) {
+export function HistogramChart({ bins, unit = '', format = v => v, height = 230 }) {
+  const { t } = useI18n()
   if (!bins?.length) return null
   const data = bins.map(b => ({ ...b, mid: (b.from + b.to) / 2 }))
   return (
@@ -156,25 +157,25 @@ export function HistogramChart({ bins, unit = '', format = v => v, height = 220 
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
         <XAxis dataKey="mid" tick={TICK} axisLine={false} tickLine={false} tickFormatter={format} minTickGap={24} />
         <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} />
-        <Tooltip {...TOOLTIP} labelFormatter={(_, p) => p?.[0] ? `${format(p[0].payload.from)}–${format(p[0].payload.to)}${unit}` : ''} formatter={v => [v, 'Farms']} />
-        <Bar dataKey="count" fill={ACCENT} radius={[3, 3, 0, 0]} />
+        <Tooltip {...TOOLTIP} labelFormatter={(_, p) => (p?.[0] ? `${format(p[0].payload.from)}–${format(p[0].payload.to)}${unit}` : '')} formatter={v => [v, t('chart.farms')]} />
+        <Bar dataKey="count" fill={WATER} radius={[3, 3, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   )
 }
 
-/** Signed correlation coefficients (diverging, gray zero line). */
-export function CorrelationChart({ rows, valueKey = 'spearman', height }) {
+export function CorrelationChart({ rows, height }) {
+  const { t } = useI18n()
   if (!rows?.length) return null
-  const data = rows.map(r => ({ feature: r.feature.replace(/_/g, ' '), value: r[valueKey] ?? 0, pearson: r.pearson, spearman: r.spearman }))
+  const data = rows.map(r => ({ feature: t('feature.' + r.feature), value: r.spearman ?? 0, pearson: r.pearson, spearman: r.spearman }))
   return (
-    <ResponsiveContainer width="100%" height={height || Math.max(200, data.length * 30)}>
+    <ResponsiveContainer width="100%" height={height || Math.max(220, data.length * 32)}>
       <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} horizontal={false} />
         <XAxis type="number" domain={[-1, 1]} tick={TICK} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="feature" tick={TICK} axisLine={false} tickLine={false} width={120} />
+        <YAxis type="category" dataKey="feature" tick={TICK} axisLine={false} tickLine={false} width={130} />
         <ReferenceLine x={0} stroke="var(--border-strong)" />
-        <Tooltip {...TOOLTIP} formatter={(_, __, p) => [`Spearman ${p.payload.spearman} · Pearson ${p.payload.pearson}`, 'Correlation with soil moisture']} />
+        <Tooltip {...TOOLTIP} formatter={(_, __, p) => [`Spearman ${p.payload.spearman} · Pearson ${p.payload.pearson}`, t('chart.corr')]} />
         <Bar dataKey="value" radius={4} maxBarSize={18}>
           {data.map((d, i) => <Cell key={i} fill={d.value >= 0 ? POS : NEG} />)}
         </Bar>
@@ -183,19 +184,17 @@ export function CorrelationChart({ rows, valueKey = 'spearman', height }) {
   )
 }
 
-/** Pumps running per 30-minute slot against feeder capacity. */
-export function FeederLoadChart({ assignments, capacity, height = 220 }) {
+export function FeederLoadChart({ assignments, capacity, height = 230 }) {
+  const { t, fmtDate } = useI18n()
   if (!assignments?.length) return null
   const load = {}
-  const toMin = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+  const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m }
   assignments.forEach(a => {
     for (let m = toMin(a.start); m < toMin(a.end); m += 30) {
       const key = `${a.date} ${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
       load[key] = (load[key] || 0) + 1
     }
   })
-  // Every 30-minute slot from the first to the last scheduled day, idle slots as 0,
-  // so the supply-window pattern and the gaps between windows are visible.
   const days = [...new Set(assignments.map(a => a.date))].sort()
   const data = []
   for (let d = new Date(days[0]); d <= new Date(days[days.length - 1]); d.setDate(d.getDate() + 1)) {
@@ -207,36 +206,59 @@ export function FeederLoadChart({ assignments, capacity, height = 220 }) {
   }
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 12, right: 12, left: -10, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 14, right: 12, left: -10, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-        <XAxis dataKey="slot" tick={TICK} axisLine={false} tickLine={false} minTickGap={60} tickFormatter={s => fmtDate(s.split(' ')[0]) + ' ' + s.split(' ')[1]} />
+        <XAxis dataKey="slot" tick={TICK} axisLine={false} tickLine={false} minTickGap={60} tickFormatter={s => fmtDate(s.split(' ')[0])} />
         <YAxis tick={TICK} axisLine={false} tickLine={false} allowDecimals={false} />
-        <Tooltip {...TOOLTIP} formatter={v => [v, 'Pumps running']} />
-        {capacity && <ReferenceLine y={capacity} stroke={STATUS_COLOR.IRRIGATE_NOW} strokeDasharray="5 4" label={{ value: `Feeder capacity ${capacity}`, fill: 'var(--text-2)', fontSize: 10, position: 'insideTopRight' }} />}
+        <Tooltip {...TOOLTIP} labelFormatter={s => `${fmtDate(s.split(' ')[0])} ${s.split(' ')[1]}`} formatter={v => [v, t('schedule.pumpsRunning')]} />
+        {capacity && <ReferenceLine y={capacity} stroke={STATUS_HEX.IRRIGATE_NOW} strokeDasharray="5 4" label={{ value: t('schedule.capacityLine', { n: capacity }), fill: 'var(--text-2)', fontSize: 10, position: 'insideTopRight' }} />}
         <Area type="stepAfter" dataKey="pumps" stroke={ACCENT} fill={ACCENT} fillOpacity={0.25} strokeWidth={1.5} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
   )
 }
 
-/** Stage Kc curve for the crop season with a marker at today's crop age. */
-export function KcCurveChart({ stageDays, kc, cropAge, height = 160 }) {
+export function KcCurveChart({ stageDays, kc, cropAge, height = 170 }) {
+  const { t, fmtNum } = useI18n()
   if (!stageDays || !kc) return null
   const ini = stageDays.initial, dev = ini + stageDays.development, mid = dev + stageDays.mid, end = mid + stageDays.late
-  const data = [
-    { day: 0, kc: kc.initial }, { day: ini, kc: kc.initial }, { day: dev, kc: kc.mid },
-    { day: mid, kc: kc.mid }, { day: end, kc: kc.end },
-  ]
+  const data = [{ day: 0, kc: kc.initial }, { day: ini, kc: kc.initial }, { day: dev, kc: kc.mid }, { day: mid, kc: kc.mid }, { day: end, kc: kc.end }]
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <ComposedChart data={data} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}>
+      <ComposedChart data={data} margin={{ top: 18, right: 14, left: -18, bottom: 0 }}>
+        <defs>
+          <linearGradient id="kcGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={ACCENT} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+          </linearGradient>
+        </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={GRID} vertical={false} />
-        <XAxis dataKey="day" type="number" domain={[0, end]} tick={TICK} axisLine={false} tickLine={false} unit="d" />
+        <XAxis dataKey="day" type="number" domain={[0, end]} tick={TICK} axisLine={false} tickLine={false} />
         <YAxis tick={TICK} axisLine={false} tickLine={false} domain={[0, 1.4]} />
-        <Tooltip {...TOOLTIP} labelFormatter={v => `Day ${v}`} formatter={v => [Number(v).toFixed(2), 'Kc']} />
-        <ReferenceLine x={Math.min(cropAge, end)} stroke={ACCENT} strokeWidth={2} label={{ value: `Today (day ${cropAge})`, fill: 'var(--text-1)', fontSize: 10, position: 'top' }} />
-        <Line type="linear" dataKey="kc" stroke="var(--text-2)" strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+        <Tooltip {...TOOLTIP} labelFormatter={v => t('chart.day', { n: v })} formatter={v => [fmtNum(v, 2), 'Kc']} />
+        <Area type="linear" dataKey="kc" stroke={ACCENT} strokeWidth={2} fill="url(#kcGrad)" dot={{ r: 3, fill: ACCENT }} isAnimationActive={false} />
+        <ReferenceLine x={Math.min(cropAge, end)} stroke={WATER} strokeWidth={2} label={{ value: t('chart.today', { n: cropAge }), fill: 'var(--text-1)', fontSize: 10, position: 'top' }} />
+        <Line dataKey="kc" stroke="transparent" dot={false} activeDot={false} legendType="none" />
       </ComposedChart>
+    </ResponsiveContainer>
+  )
+}
+
+/** Radial share chart: one ring per village, length = share of farms due within 3 days. */
+export function VillageNeedChart({ villages, height = 300 }) {
+  const { t, fmtNum } = useI18n()
+  if (!villages?.length) return null
+  const data = [...villages]
+    .map(v => ({ name: v.village, value: Math.round((100 * (v.irrigate_now + v.irrigate_soon)) / v.farms) }))
+    .sort((a, b) => a.value - b.value)
+    .map((d, i, arr) => ({ ...d, fill: mixHex(ACCENT, WATER, i / (arr.length - 1 || 1)) }))
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <RadialBarChart data={data} innerRadius="18%" outerRadius="100%" startAngle={90} endAngle={-270} barSize={9}>
+        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+        <RadialBar dataKey="value" background={{ fill: 'var(--bg-input)' }} cornerRadius={6} />
+        <Tooltip {...TOOLTIP} formatter={(v, _, p) => [`${fmtNum(v, 0)}%`, p.payload.name]} labelFormatter={() => t('analytics.radarHint')} />
+      </RadialBarChart>
     </ResponsiveContainer>
   )
 }

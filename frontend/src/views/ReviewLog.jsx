@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { getFeedback, downloadCSV } from '../api.js'
+import { useI18n } from '../i18n.jsx'
+import { TOOLTIP } from '../components/Charts.jsx'
+import { Card, Stat, PageHeader, Icon, Alert, Skeleton } from '../components/ui.jsx'
 
-const DECISIONS = {
-  accepted: { label: 'Accepted', tone: 'ok', icon: '✓' },
-  modified: { label: 'Modified', tone: 'warn', icon: '✎' },
-  rejected: { label: 'Rejected', tone: 'danger', icon: '✕' },
-}
+const TONE = { accepted: 'ok', modified: 'status-soon', rejected: 'status-now' }
+const HEX = { accepted: '#4ade80', modified: '#fb923c', rejected: '#f87171' }
+const ICON = { accepted: 'check', modified: 'sliders', rejected: 'alert' }
 const num = v => (v === null || v === undefined || v === '' ? null : Number(v))
 
 export default function ReviewLog({ onOpenFarm }) {
-  const { data: reviews = [], isLoading, isFetching, error, refetch } = useQuery({
-    queryKey: ['feedback'], queryFn: getFeedback, staleTime: 10000,
-  })
+  const { t, fmtNum, fmtDate } = useI18n()
+  const { data: reviews = [], isLoading, isFetching, error, refetch } = useQuery({ queryKey: ['feedback'], queryFn: getFeedback, staleTime: 10000 })
   const [decision, setDecision] = useState('all')
   const [role, setRole] = useState('all')
 
@@ -21,99 +22,83 @@ export default function ReviewLog({ onOpenFarm }) {
     const deltas = []
     reviews.forEach(r => {
       c[r.decision] = (c[r.decision] || 0) + 1
-      const rec = num(r.recommended_hours), ov = num(r.override_hours)
-      if (r.decision === 'modified' && rec !== null && ov !== null) deltas.push(ov - rec)
+      const a = num(r.recommended_hours), b = num(r.override_hours)
+      if (r.decision === 'modified' && a !== null && b !== null) deltas.push(b - a)
     })
-    const meanDelta = deltas.length ? deltas.reduce((a, b) => a + b, 0) / deltas.length : null
-    return { counts: c, acceptance: reviews.length ? c.accepted / reviews.length : null, meanDelta, nDelta: deltas.length }
+    return { c, acc: reviews.length ? c.accepted / reviews.length : null, mean: deltas.length ? deltas.reduce((x, y) => x + y, 0) / deltas.length : null, n: deltas.length }
   }, [reviews])
-
-  const rows = useMemo(() => reviews.filter(r =>
-    (decision === 'all' || r.decision === decision) && (role === 'all' || r.reviewer_role === role)
-  ), [reviews, decision, role])
+  const rows = useMemo(() => reviews.filter(r => (decision === 'all' || r.decision === decision) && (role === 'all' || r.reviewer_role === role)), [reviews, decision, role])
+  const pie = Object.entries(stats.c).filter(([, v]) => v > 0).map(([k, v]) => ({ name: k, value: v }))
 
   return (
-    <div>
-      <div className="page-header flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="page-title">Review Log</h1>
-          <p className="page-sub">Human decisions on advisories, newest first. These become training labels for a future irrigation model.</p>
-        </div>
-        <div className="flex gap-2">
-          <button className="btn" onClick={() => downloadCSV(rows, 'advisory_reviews.csv')} disabled={!rows.length}>Export CSV</button>
-          <button className="btn" onClick={() => refetch()} disabled={isFetching}>{isFetching ? 'Refreshing…' : 'Refresh'}</button>
+    <>
+      <PageHeader eyebrow={t('nav.groupInsight')} title={t('reviews.title')} subtitle={t('reviews.subtitle')} actions={<>
+        <button className="btn" onClick={() => downloadCSV(rows, 'advisory_reviews.csv')} disabled={!rows.length}><Icon name="download" />{t('common.exportCsv')}</button>
+        <button className="btn" onClick={() => refetch()} disabled={isFetching}><Icon name="refresh" />{isFetching ? t('common.refreshing') : t('common.refresh')}</button>
+      </>} />
+      {error && <div className="mb-4"><Alert tone="error">{error.message}</Alert></div>}
+
+      <div className="grid-side mb-5">
+        <Card title={t('reviews.acceptance')} icon="check">
+          {pie.length ? (
+            <div style={{ position: 'relative' }}>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie data={pie} dataKey="value" nameKey="name" innerRadius={62} outerRadius={86} paddingAngle={3} stroke="var(--bg-card)" strokeWidth={2}>
+                    {pie.map(p => <Cell key={p.name} fill={HEX[p.name]} />)}
+                  </Pie>
+                  <Tooltip {...TOOLTIP} formatter={(v, n) => [v, t('decision.' + n)]} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+                <div style={{ textAlign: 'center' }}><div className="stat-value">{fmtNum(stats.acc * 100)}%</div><div className="xs muted">{t('decision.accepted')}</div></div>
+              </div>
+            </div>
+          ) : <div className="empty-state">{t('reviews.none')}</div>}
+        </Card>
+        <div className="stat-grid" style={{ alignContent: 'start' }}>
+          <Stat label={t('reviews.total')} icon="clipboard" value={fmtNum(reviews.length)} delta={t('reviews.counts', { a: stats.c.accepted, m: stats.c.modified, r: stats.c.rejected })} />
+          {['accepted', 'modified', 'rejected'].map(k => <Stat key={k} label={t('decision.' + k)} icon={ICON[k]} tone={TONE[k]} value={fmtNum(stats.c[k])} />)}
+          <Stat label={t('reviews.meanOverride')} icon="clock" tone="water" value={stats.mean == null ? '—' : `${stats.mean > 0 ? '+' : ''}${fmtNum(stats.mean, 1)} h`}
+            delta={stats.n ? t('reviews.fromMods', { n: stats.n, dir: t(stats.mean > 0 ? 'reviews.under' : 'reviews.over') }) : t('reviews.noMods')} />
         </div>
       </div>
 
-      {error && <div className="alert error mb-4">{error.message}</div>}
-
-      <div className="stat-grid mb-5">
-        <div className="stat-tile"><div className="stat-label">Total reviews</div><div className="stat-value">{reviews.length}</div></div>
-        <div className="stat-tile">
-          <div className="stat-label">Acceptance rate</div>
-          <div className="stat-value">{stats.acceptance == null ? '—' : (stats.acceptance * 100).toFixed(0) + '%'}</div>
-          <div className="stat-delta">{stats.counts.accepted} accepted &middot; {stats.counts.modified} modified &middot; {stats.counts.rejected} rejected</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-label">Mean hours override</div>
-          <div className="stat-value">{stats.meanDelta == null ? '—' : (stats.meanDelta > 0 ? '+' : '') + stats.meanDelta.toFixed(1) + ' h'}</div>
-          <div className="stat-delta">{stats.nDelta ? `from ${stats.nDelta} modifications: ${stats.meanDelta > 0 ? 'engine under-waters' : 'engine over-waters'}` : 'no modified reviews yet'}</div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Reviews <span className="text-muted text-sm">({rows.length})</span></span>
-          <div className="flex gap-2 flex-wrap">
-            <select value={decision} onChange={e => setDecision(e.target.value)} aria-label="Filter by decision" className="inline-select">
-              <option value="all">All decisions</option>
-              {Object.entries(DECISIONS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-            <select value={role} onChange={e => setRole(e.target.value)} aria-label="Filter by reviewer" className="inline-select">
-              <option value="all">All reviewers</option>
-              <option value="field_officer">Field officer</option>
-              <option value="agronomist">Agronomist</option>
-              <option value="farmer">Farmer</option>
-            </select>
+      <Card title={t('reviews.list')} icon="clipboard" tag={String(rows.length)} flush actions={<>
+        <select className="inline-input" value={decision} onChange={e => setDecision(e.target.value)} aria-label={t('reviews.allDecisions')}>
+          <option value="all">{t('reviews.allDecisions')}</option>{['accepted', 'modified', 'rejected'].map(k => <option key={k} value={k}>{t('decision.' + k)}</option>)}
+        </select>
+        <select className="inline-input" value={role} onChange={e => setRole(e.target.value)} aria-label={t('reviews.allReviewers')}>
+          <option value="all">{t('reviews.allReviewers')}</option>{['field_officer', 'agronomist', 'farmer'].map(k => <option key={k} value={k}>{t('role.' + k)}</option>)}
+        </select>
+      </>}>
+        {isLoading ? <Skeleton height={200} style={{ margin: 16 }} /> : !rows.length ? (
+          <div className="empty-state">{reviews.length ? t('common.noMatch') : t('reviews.none')}</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead><tr>{['when', 'farm', 'decision', 'reviewer', 'rec', 'override', 'source', 'comment'].map(k => <th key={k}>{t('reviews.col.' + k)}</th>)}</tr></thead>
+              <tbody>
+                {rows.map(r => {
+                  const a = num(r.recommended_hours), b = num(r.override_hours)
+                  return (
+                    <tr key={r.id}>
+                      <td className="nowrap muted">{r.timestamp ? fmtDate(r.timestamp, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      <td><button className="link-btn" onClick={() => onOpenFarm?.(r.farm_id)}>{r.farm_id}</button></td>
+                      <td><span className="pill" style={{ color: `var(--${TONE[r.decision]})` }}><Icon name={ICON[r.decision]} size={13} stroke={2.4} />{t('decision.' + r.decision)}</span></td>
+                      <td>{t('role.' + r.reviewer_role)}</td>
+                      <td className="nowrap">{r.recommended_date ? fmtDate(r.recommended_date) : '—'}{a !== null && ` · ${fmtNum(a, 1)} h`}</td>
+                      <td className="nowrap">{[r.override_date && fmtDate(r.override_date), b !== null && `${fmtNum(b, 1)} h`].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="muted">{r.soil_moisture_source ? t('source.' + r.soil_moisture_source) : '—'}</td>
+                      <td className="truncate" title={r.comment || ''}>{r.comment || '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        </div>
-        <div className="card-body" style={{ padding: 0 }}>
-          {isLoading ? <div className="skeleton" style={{ height: 200, margin: 16 }} /> : rows.length === 0 ? (
-            <div className="empty-state">
-              {reviews.length === 0 ? 'No reviews yet. Record one from Farm Dashboard → Review.' : 'No reviews match these filters.'}
-            </div>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>When</th><th>Farm</th><th>Decision</th><th>Reviewer</th>
-                    <th>Recommended</th><th>Override</th><th>Moisture source</th><th>Comment</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map(r => {
-                    const d = DECISIONS[r.decision]
-                    const rec = num(r.recommended_hours), ov = num(r.override_hours)
-                    return (
-                      <tr key={r.id}>
-                        <td className="text-muted nowrap">{r.timestamp ? new Date(r.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                        <td><button className="link-btn" onClick={() => onOpenFarm?.(r.farm_id)} title="Open farm">{r.farm_id}</button></td>
-                        <td><span className={'pill tone-' + (d?.tone || 'info')}><span aria-hidden="true">{d?.icon}</span> {d?.label || r.decision}</span></td>
-                        <td>{r.reviewer_role?.replace(/_/g, ' ')}</td>
-                        <td className="nowrap">{r.recommended_date || '—'}{rec !== null && ` · ${rec.toFixed(1)} h`}</td>
-                        <td className="nowrap">{r.override_date || ''}{ov !== null ? `${r.override_date ? ' · ' : ''}${ov.toFixed(1)} h` : (!r.override_date ? '—' : '')}</td>
-                        <td className="text-muted">{r.soil_moisture_source?.replace(/_/g, ' ') || '—'}</td>
-                        <td className="truncate" title={r.comment || ''}>{r.comment || '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+        )}
+      </Card>
+    </>
   )
 }
