@@ -15,12 +15,13 @@ app_port: 7860
 Built with FAO-56 crop water balance, ML soil moisture prediction, and a real-time React dashboard.
 
 ## Features
-- Farm-level irrigation advisory (FAO-56 engine)
-- Fleet map — 1,000 plots coloured by irrigation status
-- Pump scheduling (feeder-level slot allocation)
-- ML soil moisture model with spatial validation
-- Human review / HITL feedback loop
-- Multilingual advisory (English, Kannada, Hindi, Marathi)
+- Overview: fleet outlook, 3D fleet view (three.js), farms to water first, 14-day demand calendar
+- Farm advisory (FAO-56 engine) on a satellite map (Esri World Imagery, hybrid, streets, terrain), colour by status, NDVI or soil wetness
+- 3D root-zone soil profile, crop-stage timeline, farm-vs-fleet profile, what-if simulator, live weather strip
+- Fleet map with 2D/3D toggle, fleet analytics, pump scheduling (feeder-level slot allocation)
+- ML soil moisture model with spatial validation; human review / HITL feedback loop
+- Full UI in English, Kannada, Hindi and Marathi (`frontend/src/locales/`), plus multilingual advisory text and read-aloud
+- Field guide: how an advisory is made, glossary, stage-wise practice
 
 ## Access
 - Dashboard: /app/
@@ -47,4 +48,4 @@ selected soil's available water (`soil_moisture_calibration` in `config.yaml`, `
 A probe reading is always used as measured. Set `method: absolute` to restore the old behaviour.
 
 ## Stack
-React + Vite · FastAPI · scikit-learn · Leaflet · Recharts · Docker
+React + Vite · three.js · FastAPI · scikit-learn · Leaflet (Esri imagery) · Recharts · Docker

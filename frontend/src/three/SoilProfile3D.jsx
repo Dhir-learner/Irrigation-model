@@ -180,7 +180,7 @@ export default function SoilProfile3D({ availablePct = 50, triggerPct = 40, root
         })
       },
     }
-  }, { camera: { position: [5.2, 2.6, 5.6], target: [0, -0.6, 0], minDistance: 4, maxDistance: 14, maxPolarAngle: Math.PI * 0.62 }, autoRotate: 0.8 })
+  }, { camera: { position: [6.6, 3.0, 7.4], target: [0, 0.2, 0], minDistance: 5, maxDistance: 16, maxPolarAngle: Math.PI * 0.62 }, autoRotate: 0.8 })
 
   return (
     <div className="three-wrap" style={{ height }}>

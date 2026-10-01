@@ -1,6 +1,6 @@
 import {
   ComposedChart, AreaChart, Area, BarChart, Bar, Line, XAxis, YAxis, Tooltip, Legend,
-  ReferenceLine, ResponsiveContainer, CartesianGrid, Cell, RadialBarChart, RadialBar, PolarAngleAxis,
+  ReferenceLine, ResponsiveContainer, CartesianGrid, Cell,
 } from 'recharts'
 import { useI18n, featureLabel } from '../i18n.jsx'
 import { STATUS_HEX } from './ui.jsx'
@@ -17,11 +17,6 @@ export const TOOLTIP = {
   labelStyle: { color: 'var(--text-2)', marginBottom: 4 },
   itemStyle: { color: 'var(--text-1)' },
   cursor: { fill: 'var(--bg-hover)' },
-}
-function mixHex(a, b, t) {
-  const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16))
-  const pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16))
-  return '#' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, '0')).join('')
 }
 const LEGEND = { wrapperStyle: { fontSize: 11, color: 'var(--text-2)' }, iconSize: 10 }
 
@@ -244,21 +239,22 @@ export function KcCurveChart({ stageDays, kc, cropAge, height = 170 }) {
   )
 }
 
-/** Radial share chart: one ring per village, length = share of farms due within 3 days. */
-export function VillageNeedChart({ villages, height = 300 }) {
-  const { t, fmtNum } = useI18n()
+/** Ranked list: share of each village's farms due within 3 days. Labelled bars read better than rings. */
+export function VillageNeedChart({ villages }) {
+  const { fmtNum } = useI18n()
   if (!villages?.length) return null
-  const data = [...villages]
-    .map(v => ({ name: v.village, value: Math.round((100 * (v.irrigate_now + v.irrigate_soon)) / v.farms) }))
-    .sort((a, b) => a.value - b.value)
-    .map((d, i, arr) => ({ ...d, fill: mixHex(ACCENT, WATER, i / (arr.length - 1 || 1)) }))
+  const data = villages
+    .map(v => ({ name: v.village, value: (100 * (v.irrigate_now + v.irrigate_soon)) / v.farms, n: v.irrigate_now + v.irrigate_soon, farms: v.farms }))
+    .sort((a, b) => b.value - a.value)
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <RadialBarChart data={data} innerRadius="18%" outerRadius="100%" startAngle={90} endAngle={-270} barSize={9}>
-        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-        <RadialBar dataKey="value" background={{ fill: 'var(--bg-input)' }} cornerRadius={6} />
-        <Tooltip {...TOOLTIP} formatter={(v, _, p) => [`${fmtNum(v, 0)}%`, p.payload.name]} labelFormatter={() => t('analytics.radarHint')} />
-      </RadialBarChart>
-    </ResponsiveContainer>
+    <div className="rank-list">
+      {data.map(d => (
+        <div key={d.name} className="rank-row" title={`${d.n} / ${d.farms}`}>
+          <span className="n">{d.name}</span>
+          <span className="bar"><span style={{ width: `${Math.max(d.value, 1.5)}%`, opacity: d.value ? 1 : 0.35 }} /></span>
+          <span className="v">{fmtNum(d.value)}%</span>
+        </div>
+      ))}
+    </div>
   )
 }

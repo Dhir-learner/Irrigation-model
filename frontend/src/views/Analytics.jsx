@@ -65,7 +65,7 @@ export default function Analytics({ settings }) {
           <DemandCalendarChart calendar={data.demand_calendar} height={280} />
         </Card>
         <Card title={t('analytics.radar')} icon="target" foot={t('analytics.radarHint')}>
-          <VillageNeedChart villages={data.villages} height={280} />
+          <VillageNeedChart villages={data.villages} />
         </Card>
       </div>
 
