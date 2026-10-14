@@ -1,0 +1,13 @@
+00:00  AquaAdvisory
+00:10  01 / See the irrigation outlook
+00:27  02 / Set the farm context
+00:42  03 / Understand the recommendation
+01:01  04 / Explore the root zone
+01:13  05 / Test a what-if scenario
+01:29  06 / Locate farms across the fleet
+01:42  07 / Compare village demand
+01:55  08 / Build a pump schedule
+02:14  09 / Make advice accessible
+02:25  10 / Inspect model reliability
+02:40  11 / Keep a person in the loop
+02:52  From field data to informed irrigation

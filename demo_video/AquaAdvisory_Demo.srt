@@ -1,0 +1,187 @@
+1
+00:00:00,350 --> 00:00:02,832
+Meet Aqua Advisory: sugarcane irrigation intelligence.
+
+2
+00:00:02,832 --> 00:00:09,450
+This prototype brings farm data, soil moisture prediction, and water balance planning
+into one practical dashboard.
+
+3
+00:00:10,350 --> 00:00:11,911
+Start with the overview.
+
+4
+00:00:11,911 --> 00:00:15,814
+The loaded dataset contains one thousand farms across ten villages.
+
+5
+00:00:15,814 --> 00:00:20,888
+Summary cards show near-term irrigation needs, estimated water demand, and area under
+advisory.
+
+6
+00:00:20,888 --> 00:00:25,962
+The three-dimensional fleet view and priority list help identify farms needing
+attention first.
+
+7
+00:00:27,350 --> 00:00:30,070
+Open a farm advisory and select a plot.
+
+8
+00:00:30,070 --> 00:00:33,811
+Set the planting date, soil texture, irrigation method, and pump flow.
+
+9
+00:00:33,811 --> 00:00:36,531
+Here we switch from furrow to drip irrigation.
+
+10
+00:00:36,531 --> 00:00:40,612
+Optional probe readings and rainfall inputs let the plan reflect field conditions.
+
+11
+00:00:42,350 --> 00:00:47,586
+The advisory combines a soil moisture estimate with the F A O fifty-six water
+balance.
+
+12
+00:00:47,586 --> 00:00:52,822
+It shows the next irrigation date, estimated pump duration, crop water use, and
+stress status.
+
+13
+00:00:52,822 --> 00:00:58,756
+The water balance chart then projects depletion over fourteen days, making the
+irrigation trigger and assumptions visible.
+
+14
+00:01:01,350 --> 00:01:05,110
+The crop and soil view connects the recommendation to the root zone.
+
+15
+00:01:05,110 --> 00:01:08,244
+Rotate the soil profile to see available water and the
+
+16
+00:01:08,244 --> 00:01:11,378
+irrigation threshold, alongside crop stage and the crop coefficient curve.
+
+17
+00:01:13,350 --> 00:01:16,926
+Next, test a scenario without changing the farm record.
+
+18
+00:01:16,926 --> 00:01:19,708
+Adjust an input, then run the simulator.
+
+19
+00:01:19,708 --> 00:01:25,271
+The comparison shows how predicted moisture, irrigation timing, water volume, and
+pump hours respond.
+
+20
+00:01:25,271 --> 00:01:28,450
+These are model-based comparisons, not measured field outcomes.
+
+21
+00:01:29,350 --> 00:01:32,711
+The fleet map brings farm priorities into a spatial view.
+
+22
+00:01:32,711 --> 00:01:35,736
+Filter by village or irrigation status, inspect plot boundaries,
+
+23
+00:01:35,736 --> 00:01:39,097
+and switch between two-dimensional mapping and the three-dimensional fleet display.
+
+24
+00:01:39,097 --> 00:01:41,450
+Individual farms remain accessible from the fleet.
+
+25
+00:01:42,350 --> 00:01:45,807
+Fleet analytics turns individual plans into a wider demand picture.
+
+26
+00:01:45,807 --> 00:01:50,993
+Compare villages, inspect the fourteen-day demand calendar, and review estimated
+water volumes and pump hours.
+
+27
+00:01:50,993 --> 00:01:54,450
+The village summary can also be exported for further planning.
+
+28
+00:01:55,350 --> 00:01:57,830
+Pump scheduling translates demand into operating slots.
+
+29
+00:01:57,830 --> 00:02:02,435
+Choose a village, a planning horizon, and the maximum number of simultaneous pumps.
+
+30
+00:02:02,435 --> 00:02:07,749
+Build the schedule to see feeder load and farm assignments within the configured
+supply windows.
+
+31
+00:02:07,749 --> 00:02:11,646
+Unmet hours remain visible when the available capacity cannot cover demand.
+
+32
+00:02:14,350 --> 00:02:17,236
+The interface supports English, Kannada, Hindi, and Marathi.
+
+33
+00:02:17,236 --> 00:02:20,121
+Switching language updates the dashboard and advisory text.
+
+34
+00:02:20,121 --> 00:02:24,450
+Read-aloud and export controls make the recommendation easier to communicate and
+review.
+
+35
+00:02:25,350 --> 00:02:30,050
+Model Insights separates a strong random holdout score from performance on unseen
+locations.
+
+36
+00:02:30,050 --> 00:02:32,942
+The report compares random, village, and taluk validation.
+
+37
+00:02:32,942 --> 00:02:36,196
+Geographic generalization is a limitation here, so the displayed
+
+38
+00:02:36,196 --> 00:02:39,450
+results should guide further data collection and field validation.
+
+39
+00:02:40,350 --> 00:02:43,472
+The review form lets a field officer, agronomist, or
+
+40
+00:02:43,472 --> 00:02:46,941
+farmer accept, modify, or reject an advisory and add comments.
+
+41
+00:02:46,941 --> 00:02:49,369
+This keeps human judgment in the workflow.
+
+42
+00:02:49,369 --> 00:02:51,450
+No demonstration review is submitted here.
+
+43
+00:02:52,350 --> 00:02:54,835
+Aqua Advisory connects prediction, planning, and review.
+
+44
+00:02:54,835 --> 00:02:59,450
+A transparent prototype for irrigation decisions, with every recommendation subject
+to field confirmation.

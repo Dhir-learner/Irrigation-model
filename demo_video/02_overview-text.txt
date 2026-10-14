@@ -1,0 +1,143 @@
+IRRIGATION OUTLOOK
+Water where it is needed, when it is needed
+
+1,000 sugarcane plots across 10 villages in Mandya district, planned with the FAO-56 water balance.
+
+Shared settings: day 180 · Sandy loam · Furrow
+
+Open advisory
+Open fleet map
+Field Guide
+NEED WATER WITHIN 3 DAYS
+345
+169 now · 176 soon
+GROSS WATER DUE IN 7 DAYS
+6,85,622 m³
+38,090 pump-hours
+FLEET CROP WATER USE
+46,322 m³
+mean ETc 6.30 mm/d
+AREA UNDER ADVISORY
+736 ha
+1,000 farms
+3D fleet view
+THREE.JS
+Ankegowdanadoddi (102)
+Bheemanahalli (96)
+Chikkathammanahalli (94)
+Chowda Ghatta (108)
+Hadya (95)
+Hosur (93)
+Kachenahalli (99)
+Laxmipura (99)
+Malagalali (108)
+Talasasana (106)
+Irrigate now
+Irrigate within 3 days
+Not required yet
+Column height = root-zone depletion
+MM-MD-0723
+Talasasana
+Irrigate now
+Next irrigation: 14 Oct · 68%
+Drag to orbit · scroll to zoom · click a column to open the farm
+Farms to water first
+MM-MD-0246
+Kachenahalli
+	
+Now	
+today
+68.7 h · 1,236 m³
+	
+
+
+MM-MD-0172
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+
+
+MM-MD-0264
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+
+
+MM-MD-0316
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+
+
+MM-MD-0364
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+
+
+MM-MD-0664
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+
+
+MM-MD-0671
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+
+
+MM-MD-0685
+Talasasana
+	
+Now	
+today
+67.9 h · 1,222 m³
+	
+Sorted by due date, then by depletion
+Irrigation demand, next 14 days
+14 Oct
+15 Oct
+16 Oct
+17 Oct
+18 Oct
+19 Oct
+20 Oct
+21 Oct
+22 Oct
+23 Oct
+24 Oct
+25 Oct
+26 Oct
+27 Oct
+0 m³
+50k m³
+100k m³
+150k m³
+200k m³
+Status by taluk
+Pandavpura
+Krishnarajpet
+Malavalli
+Maddur
+Mandya
+Shrirangapattana
+NowSoonNot required

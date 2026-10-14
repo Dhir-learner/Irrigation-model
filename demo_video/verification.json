@@ -1,0 +1,11 @@
+{
+  "duration_seconds": 180.02,
+  "resolution": "1920x1080",
+  "fps": 25,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "size_mb": 13.19,
+  "decode_errors": "",
+  "chapters": 13,
+  "external_browser_requests": "blocked"
+}

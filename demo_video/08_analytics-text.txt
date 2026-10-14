@@ -1,0 +1,132 @@
+FLEET
+Fleet Analytics
+
+Where the water is needed, when, and how much the soil-moisture signal really varies.
+
+Export village CSV
+FARMS · AREA
+1,000
+736 ha
+NEED WATER WITHIN 3 DAYS
+345
+169 now · 176 soon
+GROSS WATER DUE IN 7 DAYS
+6,85,622 m³
+38,090 pump-hours
+FLEET CROP WATER USE
+46,322 m³/d
+mean ETc 6.30 mm/d
+PEAK DEMAND DAY
+14 Oct
+1,92,467 m³ · 169 farms due
+Irrigation demand calendar, next 14 days
+GROSS VOLUME OF IRRIGATIONS FALLING DUE EACH DAY
+14 Oct
+15 Oct
+16 Oct
+17 Oct
+18 Oct
+19 Oct
+20 Oct
+21 Oct
+22 Oct
+23 Oct
+24 Oct
+25 Oct
+26 Oct
+27 Oct
+0 m³
+50k m³
+100k m³
+150k m³
+200k m³
+Village water-need profile
+Chowda Ghatta
+100%
+Kachenahalli
+100%
+Talasasana
+94%
+Bheemanahalli
+40%
+Laxmipura
+0%
+Ankegowdanadoddi
+0%
+Malagalali
+0%
+Chikkathammanahalli
+0%
+Hadya
+0%
+Hosur
+0%
+Share of farms due within 3 days, by village
+Village summary
+Now
+Soon
+Not required
+VILLAGE	TALUK	FARMS	STATUS MIX	WETNESS RANK	MEAN DUE (D)	WATER DUE 7D (M³) ↓	PUMP-H 7D
+Talasasana	Pandavpura	106	
+	11	0.5	1,22,158	6,787
+Chowda Ghatta	Krishnarajpet	108	
+	25	2.3	1,21,053	6,725
+Kachenahalli	Pandavpura	99	
+	12	0.2	1,09,809	6,100
+Hadya	Mandya	95	
+	47	5.3	1,04,346	5,797
+Chikkathammanahalli	Mandya	94	
+	41	4.3	1,03,432	5,746
+Ankegowdanadoddi	Maddur	102	
+	63	7.2	78,870	4,382
+Bheemanahalli	Malavalli	96	
+	57	6.5	45,954	2,553
+Laxmipura	Krishnarajpet	99	
+	95	12.7	0	0
+Malagalali	Malavalli	108	
+	85	10.5	0	0
+Hosur	Shrirangapattana	93	
+	66	8.1	0	0
+Distribution of model soil moisture
+20 BINS
+0.221
+0.224
+0.228
+0.232
+0.236
+0.240
+0.244
+0.248
+0.251
+0.255
+0
+200
+400
+600
+800
+Median 0.2188 · IQR 0.2181–0.2204 · CV 4.6%. The whole fleet sits inside a 0.039 m³/m³ band, far narrower than the field-capacity to wilting-point range, so the engine ranks the value instead of reading it as absolute moisture.
+Correlation with soil moisture
+SPEARMAN Ρ
+-1
+-0.5
+0
+0.5
+1
+Soil pH
+Temperature
+LAI
+Season rainfall
+Organic carbon
+Humidity
+NDVI
+Rank correlation across 1,000 farms. Where Pearson and Spearman disagree in sign, a few villages drive the relation, not a trend.
+Feature summary
+FEATURE	MEAN	STD	MIN	P25	MEDIAN	P75	MAX	CV	MISSING
+Model soil moisture	0.2229	0.0102	0.2176	0.2181	0.2188	0.2204	0.2563	4.6%	0
+NDVI	0.5801	0.0894	0.2599	0.5284	0.5845	0.6507	0.787	15.4%	6
+LAI	0.602	0.0898	0.4	0.5487	0.6	0.65	0.85	14.9%	0
+Season rainfall	629.6054	74.5645	498.2799	551.574	657.2704	686.073	711.2964	11.8%	0
+Temperature	23.2525	0.5778	22.1966	23.1204	23.2666	23.6948	24.1738	2.5%	0
+Humidity	78.8765	1.8968	76.2005	77.0855	78.4851	79.7692	82.6741	2.4%	0
+Organic carbon	10.5428	1.8521	7.6652	10	10	10	20	17.6%	0
+Soil pH	6.3727	0.2329	6	6.2	6.3	6.5002	7.2	3.7%	0

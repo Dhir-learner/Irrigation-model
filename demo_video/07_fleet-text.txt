@@ -1,0 +1,187 @@
+FLEET
+Fleet Map
+
+Every plot under shared settings: day 180 · Sandy loam · Furrow · 18 m³/h. Change them on Farm Advisory.
+
+Export CSV
+Taluk
+All
+Krishnarajpet
+Maddur
+Malavalli
+Mandya
+Pandavpura
+Shrirangapattana
+Village
+All
+Ankegowdanadoddi
+Bheemanahalli
+Chikkathammanahalli
+Chowda Ghatta
+Hadya
+Hosur
+Kachenahalli
+Laxmipura
+Malagalali
+Talasasana
+Show status
+Irrigate now
+Irrigate within 3 days
+Not required yet
+FARMS IN AREA
+1,000
+IRRIGATE NOW
+169
+17% of farms
+IRRIGATE WITHIN 3 DAYS
+176
+18% of farms
+NOT REQUIRED YET
+655
+66% of farms
+WATER DUE IN 7 DAYS
+6,85,623 m³
+38,090 pump-hours
+Plots by irrigation status
+Map
+3D
+Ankegowdanadoddi (102)
+Bheemanahalli (96)
+Chikkathammanahalli (94)
+Chowda Ghatta (108)
+Hadya (95)
+Hosur (93)
+Kachenahalli (99)
+Laxmipura (99)
+Malagalali (108)
+Talasasana (106)
+Irrigate now
+Irrigate within 3 days
+Not required yet
+Column height = root-zone depletion
+Drag to orbit · scroll to zoom · click a column to open the farm
+Farms by days until irrigation
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+Days until irrigation is due
+0
+45
+90
+135
+180
+Irrigate nowIrrigate within 3 daysNot required yet
+Due soonest
+FARM	VILLAGE	STATUS	DUE	DEPLETED	HOURS
+MM-MD-0246	Kachenahalli	
+Now	today	70%	68.7
+MM-MD-0172	Talasasana	
+Now	today	69%	67.9
+MM-MD-0264	Talasasana	
+Now	today	69%	67.9
+MM-MD-0316	Talasasana	
+Now	today	69%	67.9
+MM-MD-0364	Talasasana	
+Now	today	69%	67.9
+MM-MD-0664	Talasasana	
+Now	today	69%	67.9
+MM-MD-0671	Talasasana	
+Now	today	69%	67.9
+MM-MD-0685	Talasasana	
+Now	today	69%	67.9
+MM-MD-0688	Talasasana	
+Now	today	69%	67.9
+MM-MD-0820	Talasasana	
+Now	today	69%	67.9
+MM-MD-0796	Talasasana	
+Now	today	69%	67.9
+MM-MD-0069	Talasasana	
+Now	today	69%	67.9
+MM-MD-0123	Talasasana	
+Now	today	69%	67.9
+MM-MD-0189	Talasasana	
+Now	today	69%	67.9
+MM-MD-0238	Talasasana	
+Now	today	69%	67.9
+MM-MD-0251	Talasasana	
+Now	today	69%	67.9
+MM-MD-0669	Talasasana	
+Now	today	69%	67.9
+MM-MD-0675	Talasasana	
+Now	today	69%	67.9
+MM-MD-0769	Talasasana	
+Now	today	69%	67.9
+MM-MD-0160	Talasasana	
+Now	today	69%	67.9
+MM-MD-0402	Talasasana	
+Now	today	69%	67.9
+MM-MD-0377	Talasasana	
+Now	today	69%	67.9
+MM-MD-0010	Talasasana	
+Now	today	68%	67.0
+MM-MD-0045	Talasasana	
+Now	today	68%	67.0
+MM-MD-0272	Talasasana	
+Now	today	68%	67.0
+MM-MD-0723	Talasasana	
+Now	today	68%	67.0
+MM-MD-0953	Talasasana	
+Now	today	68%	67.0
+MM-MD-0970	Talasasana	
+Now	today	68%	67.0
+MM-MD-0985	Talasasana	
+Now	today	68%	67.0
+MM-MD-0498	Talasasana	
+Now	today	68%	67.0
+MM-MD-0974	Talasasana	
+Now	today	68%	66.7
+MM-MD-0952	Talasasana	
+Now	today	68%	66.6
+MM-MD-0081	Talasasana	
+Now	today	68%	66.6
+MM-MD-0302	Talasasana	
+Now	today	68%	66.6
+MM-MD-0616	Kachenahalli	
+Now	today	68%	66.4
+MM-MD-0225	Kachenahalli	
+Now	today	68%	66.4
+MM-MD-0476	Kachenahalli	
+Now	today	68%	66.4
+MM-MD-0395	Kachenahalli	
+Now	today	68%	66.1
+MM-MD-0445	Kachenahalli	
+Now	today	68%	66.1
+MM-MD-0622	Kachenahalli	
+Now	today	68%	66.1
+MM-MD-0945	Kachenahalli	
+Now	today	68%	66.1
+MM-MD-0054	Kachenahalli	
+Now	today	67%	65.9
+MM-MD-0499	Kachenahalli	
+Now	today	67%	65.9
+MM-MD-0962	Kachenahalli	
+Now	today	67%	65.9
+MM-MD-0975	Kachenahalli	
+Now	today	67%	65.9
+MM-MD-0245	Kachenahalli	
+Now	today	67%	65.4
+MM-MD-0412	Kachenahalli	
+Now	today	67%	65.4
+MM-MD-0535	Kachenahalli	
+Now	today	67%	65.4
+MM-MD-0540	Kachenahalli	
+Now	today	67%	65.4
+MM-MD-0544	Kachenahalli	
+Now	today	67%	65.4
+Show more (950 remaining)

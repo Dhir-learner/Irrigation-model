@@ -1,0 +1,68 @@
+;FFMETADATA1
+title=AquaAdvisory - Project Demo
+comment=Local application walkthrough. Prototype decision support.
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=10000
+title=AquaAdvisory
+[CHAPTER]
+TIMEBASE=1/1000
+START=10000
+END=27000
+title=01 / See the irrigation outlook
+[CHAPTER]
+TIMEBASE=1/1000
+START=27000
+END=42000
+title=02 / Set the farm context
+[CHAPTER]
+TIMEBASE=1/1000
+START=42000
+END=61000
+title=03 / Understand the recommendation
+[CHAPTER]
+TIMEBASE=1/1000
+START=61000
+END=73000
+title=04 / Explore the root zone
+[CHAPTER]
+TIMEBASE=1/1000
+START=73000
+END=89000
+title=05 / Test a what-if scenario
+[CHAPTER]
+TIMEBASE=1/1000
+START=89000
+END=102000
+title=06 / Locate farms across the fleet
+[CHAPTER]
+TIMEBASE=1/1000
+START=102000
+END=115000
+title=07 / Compare village demand
+[CHAPTER]
+TIMEBASE=1/1000
+START=115000
+END=134000
+title=08 / Build a pump schedule
+[CHAPTER]
+TIMEBASE=1/1000
+START=134000
+END=145000
+title=09 / Make advice accessible
+[CHAPTER]
+TIMEBASE=1/1000
+START=145000
+END=160000
+title=10 / Inspect model reliability
+[CHAPTER]
+TIMEBASE=1/1000
+START=160000
+END=172000
+title=11 / Keep a person in the loop
+[CHAPTER]
+TIMEBASE=1/1000
+START=172000
+END=180000
+title=From field data to informed irrigation

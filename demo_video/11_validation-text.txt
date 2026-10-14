@@ -1,0 +1,64 @@
+INSIGHTS
+Model Insights
+
+How good is the soil-moisture model, really? Random splits versus villages and taluks it has never seen.
+
+Finding: Random-split scores are near perfect, but on unseen villages no model beats the mean baseline by a useful margin. Soil moisture in this dataset behaves like a coarse satellite value shared by whole villages, so the model cannot replace in-field sensing. The engine accepts probe readings and uses the model only as a ranked fallback.
+RANDOM HOLD-OUT R²
+0.9998
+optimistic: villages leak across the split
+UNSEEN-VILLAGE BEST R²
+-0.231
+Mean baseline · below 0 = worse than the mean
+DISTINCT TARGET VALUES
+33
+across 1,000 farms
+VILLAGES WITH A SINGLE VALUE
+6 / 10
+TARGET STD
+0.0102
+m³/m³
+Error by validation scheme
+All features
+Environment only
+MODEL	RANDOM 5-FOLD	LEAVE-ONE-VILLAGE-OUT	LEAVE-ONE-TALUK-OUT
+MAE	R²	MAE	R²	MAE	R²
+Mean baseline	0.0064	-0.004	0.0071	-0.231	0.0069	-0.215
+Linear Regression	4.8e-4	0.994	0.0293	-13.845	0.0677	-106.801
+Random Forest	1.4e-5	1.000	0.0072	-0.515	0.0054	-0.177
+Gradient Boosting	1.1e-5	1.000	0.0075	-0.648	0.0052	-0.101
+Negative R² means worse than predicting the mean. Random splits leak village-level labels between train and test; leave-one-village-out is the honest test for a new village.
+Global feature importance
+GRADIENT BOOSTING
+0%
+8%
+16%
+24%
+32%
+Season rainfall
+Village: Laxmipura
+Longitude
+Humidity × temperature
+Humidity
+Village: Malagalali
+Latitude
+Taluk: Pandavpura
+Temperature
+Rainfall × temperature
+Village: Hosur
+Taluk: Shrirangapattana
+Location features (village, longitude) carry much of the weight: the model is largely recognising where a farm is.
+Validation figure
+Model card
+Model
+Gradient Boosting
+Target
+Soil_Moisture
+Trained
+30 September 2026 at 09:17 pm
+Inputs
+LAI, NDVI, Organic carbon, Season rainfall, Humidity, Soil pH, Temperature, Taluk, Village, Plot location
+Hold-out MAE
+1.5e-5 · RMSE 1.6e-4
+Split
+Random 70/15/15 split (random_state=42). The dataset has no timestamp and each Farm_ID is unique. Spatially adjacent farms and shared village conditions may make this random hold-out optimistic; use spatial/temporal hold-outs when additional data is available.

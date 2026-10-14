@@ -1,0 +1,14 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Segoe UI,29,&H00F3FFF8,&H00FFFFFF,&H000F1306,&H000F1306,0,0,0,0,100,100,0,0,1,0,0,2,180,180,23,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.35,0:00:03.07,Default,,0,0,0,,Open a farm advisory and select a plot.
+Dialogue: 0,0:00:03.07,0:00:06.81,Default,,0,0,0,,Set the planting date, soil texture, irrigation method, and pump flow.
+Dialogue: 0,0:00:06.81,0:00:09.53,Default,,0,0,0,,Here we switch from furrow to drip irrigation.
+Dialogue: 0,0:00:09.53,0:00:13.61,Default,,0,0,0,,Optional probe readings and rainfall inputs let the plan reflect field conditions.
